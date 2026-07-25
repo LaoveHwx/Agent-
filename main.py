@@ -1,0 +1,32 @@
+"""
+总装配文件
+    1.创建 FastAPI
+    2.挂路由
+    3.可能还有：初始化数据库...
+    最后：前端CORS配置
+"""
+from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
+
+import api_router
+from utils.logger import setup_logger
+
+logger = setup_logger(__name__)
+app = FastAPI()
+# include_router 的作用就是：把分散在不同文件里的接口，统一挂到主应用里。
+app.include_router(planner_router, prefix="/v1")
+app.include_router(rag_router, prefix="/v1")
+app.include_router(tool_router, prefix="/v1")
+
+# 允许跨域配置
+# allow_origins: 允许请求源跨域访问，http://localhost:8080等等，"*"表示允许所有请求源
+# allow_headers：允许请求头信息跨域访问，如：Content-Type、Authorization等
+# allow_methods：允许请求方式跨域访问，如：get、post、put、delete、options等
+# allow_credentials：是否允许请求携带认证信息  看到第六了
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8080"],
+    allow_headers=["*"],
+    allow_methods=["*"],
+    allow_credentials=True
+)
