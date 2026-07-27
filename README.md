@@ -87,6 +87,8 @@ API_KEY=your_api_key
 BASE_URL=your_model_base_url
 EMBEDDINGS_MODEL_NAME=your_embedding_model_name
 PS_DSN=postgresql://user:password@localhost:5432/database
+REDIS_URL=redis://:password@localhost:6379
+REDIS_DB=2
 SQL_QUERY_TIMEOUT=10
 SQL_MAX_ROWS=200
 ```
@@ -97,6 +99,8 @@ SQL_MAX_ROWS=200
 - `API_KEY`：模型服务 API Key
 - `BASE_URL`：模型服务地址
 - `PS_DSN`：PostgreSQL 连接字符串
+- `REDIS_URL`：Redis 连接字符串，不建议在 URL 里写 `/1`
+- `REDIS_DB`：Redis 数据库编号，默认 `2`，当前项目会拒绝使用已经占用的 DB `1`
 - `EMBEDDINGS_MODEL_NAME`：Embedding 模型名称
 - `SQL_QUERY_TIMEOUT`：SQL 查询超时时间，单位秒
 - `SQL_MAX_ROWS`：SQL Tool 单次最大返回行数
@@ -169,7 +173,17 @@ GET  /v1/agent
 POST /v1/agent/analyze
 ```
 
+Memory：
+
+```text
+GET /v1/memory
+GET /v1/memory/sessions/{session_id}
+GET /v1/memory/tasks/{task_id}
+```
+
 `POST /v1/rag/init` 会在 PostgreSQL 中初始化 `pgvector` 扩展和 `rag_documents` 表。
+
+`POST /v1/agent/analyze` 支持传入 `session_id`。如果不传，系统会自动生成。返回结果中会包含 `task_id` 和 `session_id`，后续可以用 Memory 接口查询会话记录和 Agent 状态。
 
 ## 当前开发状态
 

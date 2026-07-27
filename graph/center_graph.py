@@ -9,7 +9,10 @@ from agents.sql_agent import run_sql_agent
 
 
 class AgentState(TypedDict, total=False):
+    task_id: str
+    session_id: str
     question: str
+    history: list[dict]
     task_type: str
     plan: list[str]
     sql: str | None
@@ -81,11 +84,14 @@ def build_agent_graph():
     return graph.compile()
 
 
-def run_agent_workflow(question: str) -> AgentState:
+def run_agent_workflow(question: str, session_id: str, task_id: str, history: list[dict] | None = None) -> AgentState:
     app = build_agent_graph()
     return app.invoke(
         {
+            "task_id": task_id,
+            "session_id": session_id,
             "question": question.strip(),
+            "history": history or [],
             "errors": [],
             "rag_context": [],
         }
