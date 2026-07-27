@@ -85,7 +85,10 @@ pip install psycopg2 pgvector redis
 MODEL_NAME=your_model_name
 API_KEY=your_api_key
 BASE_URL=your_model_base_url
+EMBEDDINGS_MODEL_NAME=your_embedding_model_name
 PS_DSN=postgresql://user:password@localhost:5432/database
+SQL_QUERY_TIMEOUT=10
+SQL_MAX_ROWS=200
 ```
 
 字段说明：
@@ -94,6 +97,20 @@ PS_DSN=postgresql://user:password@localhost:5432/database
 - `API_KEY`：模型服务 API Key
 - `BASE_URL`：模型服务地址
 - `PS_DSN`：PostgreSQL 连接字符串
+- `EMBEDDINGS_MODEL_NAME`：Embedding 模型名称
+- `SQL_QUERY_TIMEOUT`：SQL 查询超时时间，单位秒
+- `SQL_MAX_ROWS`：SQL Tool 单次最大返回行数
+
+RAG 可选配置：
+
+```env
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+RAG_EMBEDDING_DIM=1024
+RAG_CHUNK_SIZE=800
+RAG_CHUNK_OVERLAP=120
+```
+
+当 `EMBEDDINGS_MODEL_NAME` 使用 Ollama 本地模型名，例如 `modelscope.cn/Embedding-GGUF/bge-large-zh-v1.5:latest` 或 `nomic-embed-text:latest` 时，系统会优先调用 Ollama Embeddings 接口。
 
 ## 启动服务
 
@@ -114,6 +131,45 @@ http://127.0.0.1:8000
 ```text
 http://127.0.0.1:8000/docs
 ```
+
+## 当前可用接口
+
+健康检查：
+
+```text
+GET /health
+```
+
+Planner：
+
+```text
+GET  /v1/planner
+POST /v1/planner/plan
+```
+
+SQL Tool：
+
+```text
+GET  /v1/tools/sql/schema
+POST /v1/tools/sql/query
+```
+
+RAG：
+
+```text
+POST /v1/rag/init
+POST /v1/rag/documents
+POST /v1/rag/search
+```
+
+Agent Teams：
+
+```text
+GET  /v1/agent
+POST /v1/agent/analyze
+```
+
+`POST /v1/rag/init` 会在 PostgreSQL 中初始化 `pgvector` 扩展和 `rag_documents` 表。
 
 ## 当前开发状态
 

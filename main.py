@@ -8,12 +8,20 @@
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
-import api_router
-from utils.logger import setup_logger
+
+from utils.logger import request_log_middleware, setup_logger
+from api_router.agent_router import agent_router
+from api_router.health_router import health_router
+from api_router.planner_router import planner_router
+from api_router.rag_router import rag_router
+from api_router.tool_router import tool_router
 
 logger = setup_logger(__name__)
-app = FastAPI()
-# include_router 的作用就是：把分散在不同文件里的接口，统一挂到主应用里。
+app = FastAPI(title="Enterprise Data Agent API")
+
+app.middleware("http")(request_log_middleware)
+app.include_router(health_router)
+app.include_router(agent_router, prefix="/v1")
 app.include_router(planner_router, prefix="/v1")
 app.include_router(rag_router, prefix="/v1")
 app.include_router(tool_router, prefix="/v1")
@@ -22,7 +30,7 @@ app.include_router(tool_router, prefix="/v1")
 # allow_origins: 允许请求源跨域访问，http://localhost:8080等等，"*"表示允许所有请求源
 # allow_headers：允许请求头信息跨域访问，如：Content-Type、Authorization等
 # allow_methods：允许请求方式跨域访问，如：get、post、put、delete、options等
-# allow_credentials：是否允许请求携带认证信息  看到第六了
+# allow_credentials：是否允许请求携带认证信息
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8080"],
