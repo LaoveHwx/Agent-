@@ -87,8 +87,10 @@ API_KEY=your_api_key
 BASE_URL=your_model_base_url
 EMBEDDINGS_MODEL_NAME=your_embedding_model_name
 PS_DSN=postgresql://user:password@localhost:5432/database
-REDIS_URL=redis://:password@localhost:6379
-REDIS_DB=2
+REDIS_HOST=192.168.233.129
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=
 SQL_QUERY_TIMEOUT=10
 SQL_MAX_ROWS=200
 ```
@@ -99,8 +101,7 @@ SQL_MAX_ROWS=200
 - `API_KEY`：模型服务 API Key
 - `BASE_URL`：模型服务地址
 - `PS_DSN`：PostgreSQL 连接字符串
-- `REDIS_URL`：Redis 连接字符串，不建议在 URL 里写 `/1`
-- `REDIS_DB`：Redis 数据库编号，默认 `2`，当前项目会拒绝使用已经占用的 DB `1`
+- `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD`：Redis 显式连接参数，当前默认使用虚拟机 `192.168.233.129:6379` 和 DB `0`
 - `EMBEDDINGS_MODEL_NAME`：Embedding 模型名称
 - `SQL_QUERY_TIMEOUT`：SQL 查询超时时间，单位秒
 - `SQL_MAX_ROWS`：SQL Tool 单次最大返回行数
@@ -115,6 +116,13 @@ RAG_CHUNK_OVERLAP=120
 ```
 
 当 `EMBEDDINGS_MODEL_NAME` 使用 Ollama 本地模型名，例如 `modelscope.cn/Embedding-GGUF/bge-large-zh-v1.5:latest` 或 `nomic-embed-text:latest` 时，系统会优先调用 Ollama Embeddings 接口。
+
+当前模型层统一使用 LangChain：
+
+```text
+ChatOpenAI -> Qwen/OpenAI-compatible Chat Model
+OllamaEmbeddings -> 本地 Ollama Embedding Model
+```
 
 ## 启动服务
 
@@ -171,6 +179,7 @@ Agent Teams：
 ```text
 GET  /v1/agent
 POST /v1/agent/analyze
+POST /v1/agent/stream
 ```
 
 当前 LangGraph 编排：
@@ -218,6 +227,8 @@ evaluation/datasets/
 `POST /v1/rag/init` 会在 PostgreSQL 中初始化 `pgvector` 扩展和 `rag_documents` 表。
 
 `POST /v1/agent/analyze` 支持传入 `session_id`。如果不传，系统会自动生成。返回结果中会包含 `task_id` 和 `session_id`，后续可以用 Memory 接口查询会话记录和 Agent 状态。
+
+短期记忆使用 LangGraph `RedisSaver`，通过 `thread_id=session_id` 保存当前会话上下文。长期记忆以 LangChain tools 形式接入，可保存/读取用户个性化信息和公司主要情况。
 
 ## 当前开发状态
 

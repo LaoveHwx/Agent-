@@ -1,5 +1,12 @@
-from utils.llm_client import chat_completion
+from functools import lru_cache
 
+from langchain.agents import create_agent
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableConfig
+
+from agents.langchain_utils import last_ai_content
+from models.llm import qwen_llm
+from tools.langchain_memory_tools import MEMORY_TOOLS
 
 ANALYST_SYSTEM_PROMPT = """
 你是企业数据分析系统中的 Analyst Agent。
@@ -8,41 +15,53 @@ ANALYST_SYSTEM_PROMPT = """
 """
 
 
-def run_analyst_agent(state: dict) -> dict:
-    question = state.get("question", "")
-    sql_result = state.get("sql_result")
-    rag_context = state.get("rag_context", [])
-    errors = state.get("errors", [])
-
-    user_prompt = f"""
+@lru_cache
+def get_analyst_chain():
+    agent = create_agent(
+        model=qwen_llm,
+        tools=MEMORY_TOOLS,
+        system_prompt=ANALYST_SYSTEM_PROMPT
+        + """
+回答企业问题前，可以调用 get_company_memory_tool 获取公司级长期记忆。
+涉及用户偏好、常用指标、常看区域时，可以调用 get_user_memory_tool。
+当用户明确提供新的个人偏好或公司规则时，可以调用对应 save 工具保存。
+""",
+    )
+    prompt_template = ChatPromptTemplate.from_messages([
+        (
+            "human",
+            """
 用户问题：
 {question}
 
-SQL结果：
+短期会话上下文：
+{history}
+
+SQL Agent 结果：
 {sql_result}
 
-知识库上下文：
+RAG Agent 结果：
 {rag_context}
 
 已有错误：
 {errors}
 
 请输出最终分析结论。
-"""
-    content = chat_completion(ANALYST_SYSTEM_PROMPT, user_prompt, temperature=0.2)
-    if content:
-        return {"analysis": content}
+""",
+        ),
+    ])
+    return prompt_template | agent
 
-    answer_parts = [f"问题：{question}"]
-    if sql_result:
-        answer_parts.append(
-            f"SQL 查询已执行，返回 {sql_result.get('row_count', 0)} 行数据。"
-        )
-    if rag_context:
-        answer_parts.append(f"知识库检索命中 {len(rag_context)} 条。")
-    if errors:
-        answer_parts.append("当前链路存在问题：" + "；".join(errors))
-    if not sql_result and not rag_context:
-        answer_parts.append("当前缺少可用于分析的数据结果或知识库上下文。")
 
-    return {"analysis": "\n".join(answer_parts)}
+def run_analyst_agent(state: dict, config: RunnableConfig | None = None) -> dict:
+    result = get_analyst_chain().invoke(
+        {
+            "question": state.get("question", ""),
+            "history": state.get("history", []),
+            "sql_result": state.get("sql_result"),
+            "rag_context": state.get("rag_context", []),
+            "errors": state.get("errors", []),
+        },
+        config=config,
+    )
+    return {"analysis": last_ai_content(result)}

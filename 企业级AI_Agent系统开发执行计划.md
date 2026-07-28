@@ -557,6 +557,14 @@ Agent：
 
 LangGraph
 
+当前实现方法调整：
+
+-   模型调用统一使用 LangChain `ChatOpenAI`
+-   SQL Agent / RAG Agent / Analyst Agent 使用 `create_agent` 或 LCEL
+-   SQL、RAG、长期记忆能力统一封装为 LangChain tools
+-   LangGraph 图只编译一次，运行时复用 compiled graph
+-   不再保留“无 LLM 降级运行”路径，Agent 必须依赖大模型
+
 状态：
 
 ``` python
@@ -600,6 +608,32 @@ analysis:
 # 阶段6：Memory和状态管理（第8周）
 
 ## Redis实现
+
+当前实现方法调整：
+
+短期记忆：
+
+    RedisSaver + thread_id=session_id
+
+用于保存当前会话上下文，让同一聊天框内上一句和下一句可以关联。
+
+Redis客户端构建方式：
+
+``` python
+redis_client = Redis(
+    host="192.168.233.129",
+    port=6379,
+    db=0,
+    password=None,
+)
+```
+
+长期记忆：
+
+    用户个性化记忆
+    公司主要情况记忆
+
+以 LangChain tools 形式提供给 Agent 调用。
 
 保存：
 
@@ -670,9 +704,26 @@ Agent保持上下文。
 -   模型A/B测试
 -   回归测试
 
+当前优先级调整：
+
+-   保留小规模回归测试集，用于验证 SQL / RAG / Agent 主链路
+-   暂不扩展到 100 条测试集
+-   优先保证 Agent/Graph/Memory/Stream 接口稳定
+
 ------------------------------------------------------------------------
 
 # 阶段8：工程化部署（第10周）
+
+当前优先级调整：
+
+本阶段暂不推进。
+
+当前项目重点先放在：
+
+    Agent正确回复
+    LangGraph编排稳定
+    Redis短期/长期记忆
+    前端流式输出接口
 
 Docker部署：
 

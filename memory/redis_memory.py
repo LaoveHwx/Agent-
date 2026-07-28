@@ -1,10 +1,8 @@
 import json
 from typing import Any
-from urllib.parse import urlparse
 
-import redis
-
-from utils.env_util import memory_max_messages, memory_ttl_seconds, redis_db, redis_url
+from memory.redis_client import get_redis_client
+from utils.env_util import memory_max_messages, memory_ttl_seconds, redis_db
 from utils.logger import setup_logger
 
 
@@ -23,30 +21,14 @@ def _int_value(raw_value: str | None, default: int) -> int:
 
 
 def _selected_db() -> int:
-    db = _int_value(redis_db, 2)
-    if db == 1:
-        raise RuntimeError("Redis DB 1 is reserved. Please set REDIS_DB to 0 or 2-15")
+    db = _int_value(redis_db, 0)
     if db < 0 or db > 15:
         raise RuntimeError("Redis DB must be between 0 and 15")
     return db
 
 
-def _url_has_db(url: str) -> bool:
-    path = urlparse(url).path.strip("/")
-    return path.isdigit()
-
-
-def _redis_client() -> redis.Redis:
-    if not redis_url:
-        raise RuntimeError("Redis URL is not configured. Please set REDIS_URL in .env")
-
-    if _url_has_db(redis_url):
-        url_db = int(urlparse(redis_url).path.strip("/"))
-        if url_db == 1:
-            raise RuntimeError("Redis DB 1 is reserved. Please use another Redis DB")
-        return redis.from_url(redis_url, decode_responses=True)
-
-    return redis.from_url(redis_url, db=_selected_db(), decode_responses=True)
+def _redis_client():
+    return get_redis_client(_selected_db())
 
 
 def _json_dumps(value: Any) -> str:
@@ -64,7 +46,7 @@ def memory_status() -> dict[str, Any]:
     pong = client.ping()
     return {
         "status": "ok" if pong else "failed",
-        "redis_db": _selected_db() if not _url_has_db(redis_url or "") else int(urlparse(redis_url or "").path.strip("/")),
+        "redis_db": _selected_db(),
         "key_prefix": KEY_PREFIX,
     }
 
