@@ -83,10 +83,15 @@ def run_agent_cases() -> list[dict[str, Any]]:
                 AgentAnalyzeRequest(question=case["question"], session_id=f"eval-{case.get('id')}")
             )
             passed = bool(response.final_answer) if case.get("expect_answer") else True
-            passed = passed and not response.errors
+            expected_task_type = case.get("expected_task_type")
+            if expected_task_type:
+                passed = passed and response.task_type == expected_task_type
+            if not case.get("allow_errors"):
+                passed = passed and not response.errors
             detail = {
                 "task_id": response.task_id,
                 "task_type": response.task_type,
+                "route": response.route,
                 "has_answer": bool(response.final_answer),
                 "error_count": len(response.errors),
             }

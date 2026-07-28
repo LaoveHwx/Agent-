@@ -57,12 +57,12 @@ def query_database(sql: str) -> dict[str, Any]:
     readonly_sql = validate_readonly_sql(sql)
     max_rows = _int_value(sql_max_rows, 200)
     timeout_ms = _int_value(sql_query_timeout, 10) * 1000
-    wrapped_sql = f"SELECT * FROM ({readonly_sql}) AS agent_query LIMIT %s"
+    wrapped_sql = f"SELECT * FROM ({readonly_sql}) AS agent_query LIMIT {max_rows}"
 
     with psycopg.connect(_dsn(), row_factory=dict_row) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT set_config('statement_timeout', %s, true)", (str(timeout_ms),))
-            cur.execute(wrapped_sql, (max_rows,))
+            cur.execute(wrapped_sql)
             rows = list(cur.fetchall())
             columns = [column.name for column in cur.description] if cur.description else []
 

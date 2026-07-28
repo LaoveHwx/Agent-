@@ -173,6 +173,25 @@ GET  /v1/agent
 POST /v1/agent/analyze
 ```
 
+当前 LangGraph 编排：
+
+```text
+knowledge_query:
+plan -> rag -> final
+
+data_query:
+plan -> sql -> analyst -> final
+
+complex_analysis:
+plan -> sql -> rag -> analyst -> final
+```
+
+固定 DAG 模板保留在 `graph/center_graph.py` 的 `build_fixed_agent_graph()`：
+
+```text
+plan -> sql -> rag -> analyst -> final
+```
+
 Memory：
 
 ```text

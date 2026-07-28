@@ -31,7 +31,7 @@ SQL结果：
 """
     content = chat_completion(ANALYST_SYSTEM_PROMPT, user_prompt, temperature=0.2)
     if content:
-        return {"final_answer": content}
+        return {"analysis": content}
 
     answer_parts = [f"问题：{question}"]
     if sql_result:
@@ -45,4 +45,4 @@ SQL结果：
     if not sql_result and not rag_context:
         answer_parts.append("当前缺少可用于分析的数据结果或知识库上下文。")
 
-    return {"final_answer": "\n".join(answer_parts)}
+    return {"analysis": "\n".join(answer_parts)}

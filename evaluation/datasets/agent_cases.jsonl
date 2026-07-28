@@ -1,1 +1,3 @@
-{"id":"agent_gmv_definition","question":"GMV是什么意思","expect_answer":true}
+{"id":"agent_gmv_definition","question":"GMV是什么意思","expect_answer":true,"expected_task_type":"knowledge_query"}
+{"id":"agent_sales_query","question":"查询销售额最高的产品","expect_answer":true,"expected_task_type":"data_query","allow_errors":true}
+{"id":"agent_sales_decline_analysis","question":"为什么华东地区销售下降","expect_answer":true,"expected_task_type":"complex_analysis","allow_errors":true}
