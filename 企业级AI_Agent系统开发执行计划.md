@@ -117,6 +117,50 @@ Redis
 
 ------------------------------------------------------------------------
 
+# 当前执行状态（2026-07-28）
+
+当前项目主线已调整为：
+
+    LangChain Agent
+
+    ↓
+
+    LangGraph 编排
+
+    ↓
+
+    PostgreSQL 业务数据 + RAG 知识库
+
+    ↓
+
+    Redis 短期/长期记忆
+
+    ↓
+
+    前端流式输出
+
+已完成当前主链路：
+
+-   SQL Agent / RAG Agent / Analyst Agent 已基于 LangChain `create_agent`
+-   LangGraph 图编译一次并复用 compiled graph
+-   条件路由已覆盖 `knowledge_query`、`data_query`、`complex_analysis`
+-   `analysis` 作为中间分析字段，`final_answer` 由 final 节点统一生成，避免 key 不匹配
+-   Redis 使用显式 `Redis(host, port, db, password)` 构建，当前使用 DB 0
+-   RAG 使用 PostgreSQL `rag_documents` 内部表
+-   SQL Agent 默认只访问业务表，不访问 `rag_documents`、checkpoint、memory、系统元数据表
+-   已加入 demo 业务表和文件上传入口，便于当前功能测试
+
+当前不推进：
+
+-   Docker / 部署
+-   100 条以上评测集扩展
+-   登录和 JWT 实现
+-   MCP 工具接入
+
+登录和 JWT 已纳入后续计划；MCP 根据前端和业务真实需求再决定是否接入。
+
+------------------------------------------------------------------------
+
 # 阶段0：开发环境准备（第1天）
 
 ## 创建环境
@@ -330,6 +374,26 @@ region
 
 百万级测试数据。
 
+当前实现：
+
+第一版先使用小规模虚拟业务数据验证 Agent 主链路，不做百万级数据压测。
+
+demo 业务表：
+
+    public.biz_products
+    public.biz_sales_orders
+    public.biz_region_events
+
+初始化接口：
+
+    POST /v1/tools/sql/demo-data
+
+说明：
+
+-   demo 数据只用于当前功能验证
+-   SQL Agent 只暴露业务表 schema
+-   RAG 表 `rag_documents` 属于知识库内部表，不作为 SQL Agent 业务查询对象
+
 实现：
 
 PostgreSQL查询工具。
@@ -471,11 +535,24 @@ PostgreSQL
 
 新增：
 
-    documents
+    rag_documents
 
     embedding vector
 
     metadata
+
+当前实现：
+
+    POST /v1/rag/init
+    POST /v1/rag/documents
+    POST /v1/rag/upload
+    POST /v1/rag/search
+
+上传入口：
+
+-   支持 `.txt`、`.md`、`.csv`、`.json`、`.log`
+-   上传后复用文本切分、Embedding、pgvector 入库流程
+-   文件来源写入 metadata，方便追溯
 
 优化：
 
@@ -502,6 +579,14 @@ PostgreSQL
 Agent：
 
 返回定义，并提供来源。
+
+当前验收：
+
+已使用上传文件验证：
+
+    GMV是什么意思？
+
+返回定义，并包含来源。
 
 ------------------------------------------------------------------------
 
@@ -564,6 +649,7 @@ LangGraph
 -   SQL、RAG、长期记忆能力统一封装为 LangChain tools
 -   LangGraph 图只编译一次，运行时复用 compiled graph
 -   不再保留“无 LLM 降级运行”路径，Agent 必须依赖大模型
+-   SQL Agent 只能调用业务表工具，禁止访问 RAG / memory / checkpoint / system metadata 表
 
 状态：
 
@@ -602,6 +688,39 @@ analysis:
 ↓
 
 生成分析
+
+当前编排：
+
+    knowledge_query:
+    plan -> rag -> final
+
+    data_query:
+    plan -> sql -> analyst -> final
+
+    complex_analysis:
+    plan -> sql -> rag -> analyst -> final
+
+固定 DAG 模板保留：
+
+    plan -> sql -> rag -> analyst -> final
+
+当前测试问题：
+
+    查询销售额最高的产品
+
+已生成业务表 SQL：
+
+    public.biz_sales_orders + public.biz_products
+
+当前测试问题：
+
+    为什么华东地区销售下降
+
+已生成业务表 SQL：
+
+    public.biz_region_events
+
+并结合 RAG 上传文档生成分析。
 
 ------------------------------------------------------------------------
 
@@ -724,6 +843,14 @@ Agent保持上下文。
     LangGraph编排稳定
     Redis短期/长期记忆
     前端流式输出接口
+
+下一步候选计划：
+
+1.  前端先接 `/v1/agent/stream`，处理 `start`、`metadata`、`chunk`、`done` 事件。
+2.  增强流式输出粒度，把 LangGraph 节点状态也透传给前端，例如 `planner_started`、`sql_done`、`rag_done`。
+3.  细化长期记忆工具策略，明确哪些用户偏好和公司情况允许保存。
+4.  真实业务表接入后，替换当前 demo 业务表，并补充数据字典 RAG 文档。
+5.  登录和 JWT 在主链路稳定后再实现。
 
 Docker部署：
 

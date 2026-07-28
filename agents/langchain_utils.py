@@ -1,5 +1,4 @@
 import json
-from functools import lru_cache
 from typing import Any
 
 from langchain_core.messages import AIMessage, ToolMessage
@@ -35,8 +34,3 @@ def load_tool_json(result: dict[str, Any], tool_name: str) -> Any | None:
         return json.loads(str(content))
     except json.JSONDecodeError:
         return None
-
-
-@lru_cache
-def cached_prompt_prefix(name: str) -> str:
-    return f"[{name}]"

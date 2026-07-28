@@ -4,33 +4,10 @@ from collections.abc import AsyncIterator
 import asyncio
 
 from graph.center_graph import run_agent_workflow
-from memory.redis_memory import append_conversation_message, get_conversation, save_agent_state, save_tool_result
+from memory.redis_memory import save_agent_state, save_tool_result
 from schemas.agent import AgentAnalyzeRequest, AgentAnalyzeResponse
 from utils.logger import setup_logger
 logger = setup_logger(__name__) # 做日志
-
-
-def _safe_get_conversation(session_id: str) -> tuple[list[dict], list[str]]:
-    """
-    读取指定session_id的历史
-    """
-    try:
-        return get_conversation(session_id), []
-    except Exception as exc:
-        logger.warning("memory read skipped: %s", exc)
-        return [], [f"Memory读取失败: {exc}"]
-
-
-def _safe_append_message(session_id: str, message: dict) -> list[str]:
-    """
-    保存消息，失败返回 [错误]
-    """
-    try:
-        append_conversation_message(session_id, message)
-        return []
-    except Exception as exc:
-        logger.warning("memory append skipped: %s", exc)
-        return [f"Memory写入失败: {exc}"]
 
 
 def _safe_save_state(task_id: str, result: dict) -> list[str]:
@@ -56,40 +33,22 @@ def _safe_save_state(task_id: str, result: dict) -> list[str]:
 
 def analyze_question(request: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
     """
-     agent 模块的指挥官，
-     生成追踪 ID → 读写记忆 → 调工作流 → 汇总错误 → 回写记忆
+     agent 模块的指挥官：生成追踪 ID -> 调工作流 -> 汇总错误 -> 存状态
+     对话历史由 checkpointer 按 thread_id 自动续接，不再手动读写。
     """
     session_id = request.session_id or str(uuid.uuid4())
     task_id = str(uuid.uuid4())
     question = request.question.strip()
 
-    history, memory_errors = _safe_get_conversation(session_id)
-
-    memory_errors.extend(_safe_append_message(
-        session_id,
-        {
-            "role": "user",
-            "content": question,
-            "task_id": task_id,
-        },
-    ))
-
     result = run_agent_workflow(question,
                                 session_id=session_id,
-                                task_id=task_id,
-                                history=history
+                                task_id=task_id
                                 )# 问题备份
-    result["errors"] = result.get("errors", []) + memory_errors
-    result["errors"].extend(_safe_save_state(task_id, result))
 
-    result["errors"].extend(_safe_append_message(
-        session_id,
-        {
-            "role": "assistant",
-            "content": result.get("final_answer"),
-            "task_id": task_id,
-        },
-    ))
+    # messages 是 LangChain Message 对象列表，不进 redis 状态快照、也不进响应
+    result.pop("messages", None)
+
+    result["errors"] = result.get("errors", []) + _safe_save_state(task_id, result)
 
     return AgentAnalyzeResponse(**result) #解包
 

@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 from memory.redis_client import get_redis_client
-from utils.env_util import memory_max_messages, memory_ttl_seconds, redis_db
+from utils.env_util import memory_ttl_seconds, redis_db
 from utils.logger import setup_logger
 
 
@@ -60,23 +60,6 @@ def save_agent_state(task_id: str, state: dict[str, Any]) -> None:
 def get_agent_state(task_id: str) -> dict[str, Any] | None:
     client = _redis_client()
     return _json_loads(client.get(f"{KEY_PREFIX}:agent_state:{task_id}"))
-
-
-def append_conversation_message(session_id: str, message: dict[str, Any]) -> None:
-    client = _redis_client()
-    ttl = _int_value(memory_ttl_seconds, 604800)
-    max_messages = _int_value(memory_max_messages, 20)
-    key = f"{KEY_PREFIX}:conversation:{session_id}"
-
-    client.rpush(key, _json_dumps(message))
-    client.ltrim(key, -max_messages, -1)
-    client.expire(key, ttl)
-
-
-def get_conversation(session_id: str) -> list[dict[str, Any]]:
-    client = _redis_client()
-    values = client.lrange(f"{KEY_PREFIX}:conversation:{session_id}", 0, -1)
-    return [_json_loads(value) for value in values]
 
 
 def save_tool_result(task_id: str, tool_name: str, result: dict[str, Any]) -> None:

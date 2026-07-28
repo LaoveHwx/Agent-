@@ -17,6 +17,18 @@ class RagIngestResponse(BaseModel):
     inserted: int
 
 
+class RagUploadFileResult(BaseModel):
+    filename: str
+    inserted: int = 0
+    skipped: bool = False
+    error: str | None = None
+
+
+class RagUploadResponse(BaseModel):
+    inserted: int
+    files: list[RagUploadFileResult]
+
+
 class RagSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=1000)
     top_k: int = Field(default=5, ge=1, le=20)

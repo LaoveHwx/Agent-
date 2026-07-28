@@ -48,7 +48,13 @@
 ```text
 .
 ├── api_router/          # API 路由模块
+├── database/            # 业务演示数据和数据库初始化辅助模块
 ├── graph/               # LangGraph / Agent 编排模块
+├── memory/              # Redis Memory 和 LangGraph RedisSaver
+├── models/              # LangChain LLM / Embedding 模型入口
+├── rag/                 # RAG 文档入库、切分、检索
+├── services/            # API 服务编排层
+├── tools/               # PostgreSQL / RAG / Memory LangChain Tools
 ├── utils/               # 通用工具
 │   ├── env_util.py      # 环境变量读取
 │   └── logger.py        # 日志工具
@@ -164,15 +170,29 @@ SQL Tool：
 ```text
 GET  /v1/tools/sql/schema
 POST /v1/tools/sql/query
+POST /v1/tools/sql/demo-data
 ```
+
+`POST /v1/tools/sql/demo-data` 会幂等创建并写入 demo 业务表：
+
+```text
+public.biz_products
+public.biz_sales_orders
+public.biz_region_events
+```
+
+`GET /v1/tools/sql/schema` 默认只暴露业务表。SQL Agent 会拒绝访问 `rag_documents`、checkpoint、memory、`information_schema`、`pg_catalog` 等非业务表。
 
 RAG：
 
 ```text
 POST /v1/rag/init
 POST /v1/rag/documents
+POST /v1/rag/upload
 POST /v1/rag/search
 ```
+
+`POST /v1/rag/upload` 支持上传 `.txt`、`.md`、`.csv`、`.json`、`.log` 文本类文件，文件内容会复用现有切分、Embedding、pgvector 入库流程。
 
 Agent Teams：
 
@@ -192,12 +212,6 @@ data_query:
 plan -> sql -> analyst -> final
 
 complex_analysis:
-plan -> sql -> rag -> analyst -> final
-```
-
-固定 DAG 模板保留在 `graph/center_graph.py` 的 `build_fixed_agent_graph()`：
-
-```text
 plan -> sql -> rag -> analyst -> final
 ```
 
@@ -234,21 +248,24 @@ evaluation/datasets/
 
 已完成：
 
-- FastAPI 应用入口初步搭建
-- CORS 配置
-- 日志工具封装
-- `.env` 环境变量读取
-- 基础目录结构初始化
+- FastAPI 应用入口、CORS、日志、`.env` 环境变量读取
+- LangChain 模型层：`ChatOpenAI` 接 Qwen/OpenAI-compatible Chat Model，`OllamaEmbeddings` 接本地 Embedding
+- PostgreSQL 只读查询工具、业务 schema 摘要、SQL 超时和最大行数限制
+- demo 业务表初始化：产品、销售订单、区域事件
+- RAG 入库、文件上传、pgvector 检索
+- LangGraph 多 Agent 编排：Planner、SQL Agent、RAG Agent、Analyst Agent、Final
+- Redis 短期会话记忆、Agent 状态、工具结果保存
+- LangGraph `RedisSaver`，以 `thread_id=session_id` 支持同一会话上下文
+- 基础 Evaluation 数据集和回归入口
+- `/v1/agent/stream` NDJSON 流式输出接口
 
 待完成：
 
-- `planner_router`、`rag_router`、`tool_router` 路由模块实现和导入
-- Planner / SQL / RAG / Analyst Agent 实现
-- PostgreSQL 查询 Tool
-- RAG 文档入库和 pgvector 检索
-- Redis Memory
-- Agent 评测体系
-- Docker 部署配置
+- 前端消费 `/v1/agent/stream` 的事件协议和展示状态
+- 真实业务表接入后，替换或补充当前 demo 业务表
+- 长期记忆策略细化：用户偏好、公司情况、指标口径更新边界
+- 后续需要时再实现登录和 JWT 鉴权
+- 大规模测试集、Docker、部署暂不推进
 
 ## 开发路线
 

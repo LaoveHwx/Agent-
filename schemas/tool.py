@@ -17,3 +17,9 @@ class SqlQueryResponse(BaseModel):
 
 class SchemaSummaryResponse(BaseModel):
     schema_summary: str
+
+
+class BusinessSeedResponse(BaseModel):
+    status: str
+    tables: list[str]
+    rows: dict[str, int]

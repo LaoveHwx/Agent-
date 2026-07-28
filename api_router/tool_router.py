@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
-from schemas.tool import SchemaSummaryResponse, SqlQueryRequest, SqlQueryResponse
-from services.tool_service import execute_sql_query, read_schema_summary
+from schemas.tool import BusinessSeedResponse, SchemaSummaryResponse, SqlQueryRequest, SqlQueryResponse
+from services.tool_service import execute_sql_query, read_schema_summary, seed_business_demo_data
 
 
 tool_router = APIRouter(prefix="/tools")
@@ -26,5 +26,13 @@ async def sql_query(request: SqlQueryRequest):
         return execute_sql_query(request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@tool_router.post("/sql/demo-data", response_model=BusinessSeedResponse)
+async def sql_demo_data():
+    try:
+        return seed_business_demo_data()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

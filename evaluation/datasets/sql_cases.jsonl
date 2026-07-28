@@ -1,1 +1,2 @@
 {"id":"sql_select_constant","question":"验证 SQL Tool 是否可执行基础查询","sql":"select 1 as ok","expect_non_empty":true}
+{"id":"sql_top_product_demo","question":"查询 demo 业务数据中销售额最高的产品","sql":"select p.product_name, sum(s.revenue) as total_revenue from public.biz_sales_orders s join public.biz_products p on p.product_id = s.product_id group by p.product_name order by total_revenue desc limit 1","expect_non_empty":true}
