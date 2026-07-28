@@ -1,0 +1,1 @@
+{"id":"sql_select_constant","question":"验证 SQL Tool 是否可执行基础查询","sql":"select 1 as ok","expect_non_empty":true}

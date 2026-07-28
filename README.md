@@ -181,6 +181,21 @@ GET /v1/memory/sessions/{session_id}
 GET /v1/memory/tasks/{task_id}
 ```
 
+Evaluation：
+
+```text
+GET  /v1/evaluation
+POST /v1/evaluation/run
+```
+
+评测数据集位于：
+
+```text
+evaluation/datasets/
+```
+
+第一版覆盖 SQL、RAG、Agent 三类基础回归用例，并返回通过率、失败数和平均耗时。
+
 `POST /v1/rag/init` 会在 PostgreSQL 中初始化 `pgvector` 扩展和 `rag_documents` 表。
 
 `POST /v1/agent/analyze` 支持传入 `session_id`。如果不传，系统会自动生成。返回结果中会包含 `task_id` 和 `session_id`，后续可以用 Memory 接口查询会话记录和 Agent 状态。

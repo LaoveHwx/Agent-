@@ -9,13 +9,14 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
 
-from utils.logger import request_log_middleware, setup_logger
 from api_router.agent_router import agent_router
+from api_router.evaluation_router import evaluation_router
 from api_router.health_router import health_router
 from api_router.memory_router import memory_router
 from api_router.planner_router import planner_router
 from api_router.rag_router import rag_router
 from api_router.tool_router import tool_router
+from utils.logger import request_log_middleware, setup_logger
 
 logger = setup_logger(__name__)
 app = FastAPI(title="Enterprise Data Agent API")
@@ -27,6 +28,7 @@ app.include_router(planner_router, prefix="/v1")
 app.include_router(rag_router, prefix="/v1")
 app.include_router(tool_router, prefix="/v1")
 app.include_router(memory_router, prefix="/v1")
+app.include_router(evaluation_router, prefix="/v1")
 
 # 允许跨域配置
 # allow_origins: 允许请求源跨域访问，http://localhost:8080等等，"*"表示允许所有请求源
