@@ -1,3 +1,9 @@
+"""
+环境变量集中读取：load_dotenv 后暴露全局配置。
+
+统一管理 LLM、嵌入、数据库、Redis、CORS 等配置项，业务代码 import 即用；
+数字类配置由各使用方按需做 int 转换与校验。
+"""
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -25,6 +31,15 @@ memory_ttl_seconds = os.getenv("MEMORY_TTL_SECONDS", "604800")
 memory_max_messages = os.getenv("MEMORY_MAX_MESSAGES", "20")
 sql_query_timeout = os.getenv("SQL_QUERY_TIMEOUT")
 sql_max_rows = os.getenv("SQL_MAX_ROWS")
+
+# 前端跨域白名单：逗号分隔。换端口时改 .env 的 CORS_ORIGINS 即可，无需改代码。
+# 注意：allow_credentials=True 时不能用 "*"，必须显式列出 origin。
+_default_cors_origins = ["http://localhost:8080", "http://localhost:8088"]
+cors_origins = [
+    origin.strip()
+    for origin in (os.getenv("CORS_ORIGINS") or "").split(",")
+    if origin.strip()
+] or _default_cors_origins
 
 # 后续可考虑优化：
 # 1. 把环境变量封装成 Settings 对象，避免业务代码到处 import 零散变量。

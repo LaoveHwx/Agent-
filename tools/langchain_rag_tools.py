@@ -1,3 +1,9 @@
+"""
+RAG 工具集：把企业知识检索封装为 LangChain tool。
+
+retrieve_company_knowledge_tool 调 search_documents 返回带来源的知识片段，
+供 RAG Agent 调用；RAG_TOOLS 为工具列表。
+"""
 import json
 from typing import Annotated
 

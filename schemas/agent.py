@@ -1,3 +1,6 @@
+"""
+Agent的数据契约：分析请求/响应的统一格式。
+"""
 from typing import Any
 
 from pydantic import BaseModel, Field

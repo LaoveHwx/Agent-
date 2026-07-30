@@ -1,3 +1,9 @@
+"""
+RAG 检索与入库：pgvector 向量表的建表、写入、检索。
+
+init_rag_schema 开 vector 扩展与 ivfflat 索引；insert_documents 批量向量化入库；
+search_documents 优先向量余弦检索，异常降级 ILIKE 关键词检索。
+"""
 from typing import Any
 
 import psycopg
@@ -13,6 +19,7 @@ logger = setup_logger(__name__)
 
 
 def _dsn() -> str:
+    """连接数据库保护"""
     dsn = ps_dsn or connection_string or connectioned_string
     if not dsn:
         raise RuntimeError("PostgreSQL DSN is not configured. Please set PS_DSN in .env")
@@ -20,10 +27,16 @@ def _dsn() -> str:
 
 
 def get_connection():
+    """查询数据表并且以dict_row字典输出"""
     return psycopg.connect(_dsn(), row_factory=dict_row)
 
 
 def init_rag_schema() -> dict[str, Any]:
+    """
+    初始化RAG所需pgvector表结构，开启vector扩展，
+    创建rag_documents向量表与ivfflat向量索引，
+    返回初始化状态、向量维度和表名
+    """
     dim = get_embedding_dim()
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -49,13 +62,17 @@ def init_rag_schema() -> dict[str, Any]:
                     """
                 )
             except Exception:
-                logger.exception("pgvector index creation failed")
+                logger.exception("pgvector 索引创建失败")
             conn.commit()
 
     return {"status": "ok", "embedding_dim": dim, "table": "rag_documents"}
 
 
 def insert_documents(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    批量写入文档到rag_documents向量表，自动生成文本向量，
+    跳过空内容文档，返回成功插入文档数量
+    """
     if not documents:
         return {"inserted": 0}
 
@@ -89,6 +106,10 @@ def insert_documents(documents: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def search_documents(query: str, top_k: int = 5) -> list[dict[str, Any]]:
+    """
+    向量相似度检索文档；优先执行向量余弦距离搜索，
+    异常降级为ILIKE模糊关键词检索，返回top_k匹配文档列表，携带score相似度分数
+    """
     init_rag_schema()
     query_embedding = to_pgvector(embed_text(query))
 

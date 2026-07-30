@@ -1,3 +1,9 @@
+"""
+演示业务数据播种：建表 + 幂等 upsert 种子数据。
+
+seed_demo_business_data 创建 biz_products / biz_sales_orders / biz_region_events 三张业务表，
+用 ON CONFLICT DO UPDATE 写入演示数据，供 SQL Agent 演示与评测使用。
+"""
 from typing import Any
 
 from tools.postgres_tool import get_connection
@@ -43,6 +49,15 @@ REGION_EVENTS = [
 
 
 def seed_demo_business_data() -> dict[str, Any]:
+    """
+    建三张演示业务表（biz_products / biz_sales_orders / biz_region_events），
+    并用 ON CONFLICT ... DO UPDATE 对各自的种子数据做幂等 upsert，最后提交事务。
+
+    :return: dict，包含：
+        - status: "ok"
+        - tables: 写入的表全名清单（含 schema 前缀）
+        - rows: 各表实际写入的行数，键为表名
+    """
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(

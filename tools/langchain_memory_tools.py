@@ -1,3 +1,9 @@
+"""
+记忆工具集：长期记忆读写封装为 LangChain tool。
+
+用户记忆按 user_id（取自 config.thread_id）分桶、公司记忆全局共享，均以 Redis hash
+存储；供 Analyst Agent 个性化回答与持久化用户偏好/公司规则。
+"""
 from typing import Annotated
 
 from langchain_core.runnables import RunnableConfig
@@ -11,6 +17,7 @@ COMPANY_MEMORY_KEY = "data_agent:long_memory:company"
 
 
 def _user_id_from_config(config: RunnableConfig) -> str:
+    """从 config 中取 user_id，回退 thread_id 或匿名。"""
     configurable = config.get("configurable", {}) if config else {}
     return configurable.get("user_id") or configurable.get("thread_id") or "anonymous"
 

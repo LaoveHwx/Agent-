@@ -1,3 +1,10 @@
+"""
+RAG 服务层：入库、检索、文件上传解析。
+
+initialize_rag 建表、ingest_rag_documents 切分入库、search_rag_documents 检索、
+ingest_uploaded_rag_files 处理多文件上传（大小/类型校验 + 解析 + 切分入库）。
+"""
+from rag.parsers import is_supported, parse_upload
 from rag.retriever import init_rag_schema, insert_documents, search_documents
 from rag.splitter import split_text
 from schemas.rag import (
@@ -7,17 +14,22 @@ from schemas.rag import (
     RagSearchResponse,
     RagUploadResponse,
 )
+from utils.logger import setup_logger
 
 
-SUPPORTED_UPLOAD_SUFFIXES = {".txt", ".md", ".csv", ".json", ".log"}
-MAX_UPLOAD_BYTES = 2 * 1024 * 1024
+logger = setup_logger(__name__)
+
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 def initialize_rag() -> dict:
+    """初始化 RAG 存储表结构。"""
     return init_rag_schema()
 
 
 def ingest_rag_documents(request: RagIngestRequest) -> RagIngestResponse:
+    """切分文档为片段并写入 RAG 知识库。"""
     documents = []
     for document in request.documents:
         raw_document = document.model_dump()
@@ -38,25 +50,13 @@ def ingest_rag_documents(request: RagIngestRequest) -> RagIngestResponse:
 
 
 def search_rag_documents(request: RagSearchRequest) -> RagSearchResponse:
+    """按查询检索 RAG 知识库中的相关片段。"""
     rows = search_documents(request.query.strip(), request.top_k)
     return RagSearchResponse(query=request.query.strip(), results=rows)
 
 
-def _file_suffix(filename: str) -> str:
-    dot_index = filename.rfind(".")
-    return filename[dot_index:].lower() if dot_index >= 0 else ""
-
-
-def _decode_upload(data: bytes) -> str:
-    for encoding in ("utf-8-sig", "utf-8", "gbk"):
-        try:
-            return data.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace")
-
-
 def ingest_uploaded_rag_files(files: list[dict]) -> RagUploadResponse:
+    """处理上传文件：校验大小/类型、解析、切分并入库。"""
     results = []
     total_inserted = 0
 
@@ -71,11 +71,19 @@ def ingest_uploaded_rag_files(files: list[dict]) -> RagUploadResponse:
         if len(data) > MAX_UPLOAD_BYTES:
             results.append({"filename": filename, "skipped": True, "error": "file too large"})
             continue
-        if _file_suffix(filename) not in SUPPORTED_UPLOAD_SUFFIXES:
+        if not is_supported(filename):
             results.append({"filename": filename, "skipped": True, "error": "unsupported file type"})
             continue
 
-        text = _decode_upload(data).strip()
+        try:
+            text = parse_upload(filename, data).strip()
+        except ValueError as exc:
+            results.append({"filename": filename, "skipped": True, "error": str(exc)})
+            continue
+        except Exception:
+            logger.exception("parse upload failed: %s", filename)
+            results.append({"filename": filename, "skipped": True, "error": "parse failed"})
+            continue
         if not text:
             results.append({"filename": filename, "skipped": True, "error": "no text content"})
             continue

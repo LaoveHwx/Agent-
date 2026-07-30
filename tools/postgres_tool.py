@@ -1,3 +1,10 @@
+"""
+PostgreSQL 工具：只读 SQL 校验 + 执行 + 表结构读取。
+
+validate_readonly_sql / validate_business_sql 做关键词黑名单与业务表隔离校验；
+query_* 包一层 LIMIT 与 statement_timeout 防爆；get_schema_summary / get_table_columns
+供 SQL Agent 理解表结构。
+"""
 import re
 from typing import Any
 
@@ -30,6 +37,7 @@ INTERNAL_SQL_PATTERN = re.compile(
 
 
 def _dsn() -> str:
+    """解析已配置的 PostgreSQL DSN，缺失时抛错。"""
     dsn = ps_dsn or connection_string or connectioned_string
     if not dsn:
         raise RuntimeError("PostgreSQL DSN is not configured. Please set PS_DSN in .env")
@@ -37,10 +45,12 @@ def _dsn() -> str:
 
 
 def get_connection():
+    """建立返回字典行结构的 PostgreSQL 连接。"""
     return psycopg.connect(_dsn(), row_factory=dict_row)
 
 
 def _int_value(raw_value: str | None, default: int) -> int:
+    """把环境变量字符串解析为正整数，非法或非正时回退默认值。"""
     if not raw_value:
         return default
     try:
@@ -51,6 +61,7 @@ def _int_value(raw_value: str | None, default: int) -> int:
 
 
 def _normalize_sql(sql: str) -> str:
+    """去除 SQL 首尾空白与结尾分号，空串抛错。"""
     normalized = sql.strip().rstrip(";").strip()
     if not normalized:
         raise ValueError("SQL cannot be empty")
@@ -58,6 +69,7 @@ def _normalize_sql(sql: str) -> str:
 
 
 def validate_readonly_sql(sql: str) -> str:
+    """校验 SQL 为只读 SELECT/WITH，拒绝多语句与危险关键字。"""
     normalized = _normalize_sql(sql)
     lowered = normalized.lower()
 
@@ -74,6 +86,7 @@ def validate_readonly_sql(sql: str) -> str:
 
 
 def validate_business_sql(sql: str) -> str:
+    """在只读校验基础上额外禁止访问内部表。"""
     readonly_sql = validate_readonly_sql(sql)
     if INTERNAL_SQL_PATTERN.search(readonly_sql):
         raise ValueError("Agent SQL cannot access RAG, memory, checkpoint, or system metadata tables")
@@ -81,6 +94,7 @@ def validate_business_sql(sql: str) -> str:
 
 
 def is_internal_table(table_schema: str, table_name: str) -> bool:
+    """判断表是否属于系统 schema 或 RAG/记忆等内部表。"""
     schema = table_schema.lower()
     table = table_name.lower()
     return (
@@ -91,10 +105,12 @@ def is_internal_table(table_schema: str, table_name: str) -> bool:
 
 
 def is_business_table(table_schema: str, table_name: str) -> bool:
+    """判断表是否为业务表（即非内部表）。"""
     return not is_internal_table(table_schema, table_name)
 
 
 def _execute_readonly_query(readonly_sql: str) -> dict[str, Any]:
+    """执行已校验的只读 SQL，套 LIMIT 与 statement_timeout 防爆。"""
     max_rows = _int_value(sql_max_rows, 200)
     timeout_ms = _int_value(sql_query_timeout, 10) * 1000
     wrapped_sql = f"SELECT * FROM ({readonly_sql}) AS agent_query LIMIT {max_rows}"
@@ -116,14 +132,17 @@ def _execute_readonly_query(readonly_sql: str) -> dict[str, Any]:
 
 
 def query_database(sql: str) -> dict[str, Any]:
+    """校验并执行只读 SQL，返回结构化结果。"""
     return _execute_readonly_query(validate_readonly_sql(sql))
 
 
 def query_business_database(sql: str) -> dict[str, Any]:
+    """校验为业务只读 SQL 后执行，返回结构化结果。"""
     return _execute_readonly_query(validate_business_sql(sql))
 
 
 def get_schema_summary(include_internal: bool = False) -> str:
+    """汇总业务表的表名与列定义，默认不含内部表。"""
     sql = """
     SELECT
         table_schema,
@@ -151,6 +170,7 @@ def get_schema_summary(include_internal: bool = False) -> str:
 
 
 def get_table_columns(table_name: str, include_internal: bool = False) -> list[dict[str, Any]]:
+    """读取指定表的列名、类型与可空性，默认仅业务表。"""
     normalized = table_name.strip().strip('"')
     if "." in normalized:
         schema_name, raw_table_name = normalized.split(".", 1)

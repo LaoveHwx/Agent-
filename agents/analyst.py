@@ -1,15 +1,13 @@
 """
-Analyst Agent：企业数据分析的汇总节点。
-
-结合 SQL 查询结果、RAG 知识上下文与跨轮对话历史，输出可追溯的最终分析结论。
-对话历史来自 state.messages（checkpointer 自动续接），不再手动传入 history。
+数据分析的汇总节点。
+结合 SQL 查询结果、RAG 知识上下文与跨轮对话历史，输出最终分析结论。
 """
 from functools import lru_cache
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
-from agents.langchain_utils import last_ai_content
+from utils.langchain_utils import last_ai_content
 from models.llm import get_llm
 from tools.langchain_memory_tools import MEMORY_TOOLS
 
@@ -27,6 +25,7 @@ MAX_HISTORY_MESSAGES = 20
 
 @lru_cache
 def get_analyst_agent():
+    """构建并缓存 Analyst Agent，绑定记忆工具与汇总分析系统提示。"""
     return create_agent(
         model=get_llm(),
         tools=MEMORY_TOOLS,
@@ -34,11 +33,9 @@ def get_analyst_agent():
     )
 
 
-def run_analyst_agent(state: dict, config: RunnableConfig | None = None) -> dict:
-    """汇总节点：结合跨轮对话历史 + 当轮结构化上下文，输出最终分析结论。
-
-    对话历史来自 state["messages"]（由 checkpointer 按 thread_id 自动续接），
-    不再依赖手动传入的 history 字段。
+async def run_analyst_agent(state: dict, config: RunnableConfig | None = None) -> dict:
+    """汇总节点：具有跨轮对话历史功能==输出最终分析结论。
+    对话历史来自 state["messages"]
     """
     question = state.get("question", "")
     sql_result = state.get("sql_result")
@@ -70,5 +67,5 @@ RAG Agent 结果：
     messages.append(context_message)
     messages = messages[-MAX_HISTORY_MESSAGES:]
 
-    result = get_analyst_agent().invoke({"messages": messages}, config=config)
+    result = await get_analyst_agent().ainvoke({"messages": messages}, config=config)
     return {"analysis": last_ai_content(result)}

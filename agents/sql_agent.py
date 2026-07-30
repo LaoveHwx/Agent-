@@ -11,7 +11,7 @@ from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 
-from agents.langchain_utils import last_ai_content, load_tool_json
+from utils.langchain_utils import last_ai_content, load_tool_json
 from models.llm import get_llm
 from tools.langchain_sql_tools import SQL_TOOLS
 
@@ -32,6 +32,7 @@ SQL_SYSTEM_PROMPT = """
 
 @lru_cache
 def get_sql_agent_chain():
+    """构建并缓存 SQL Agent 链，绑定只读查询工具与系统提示。"""
     agent = create_agent(
         model=get_llm(),
         tools=SQL_TOOLS,
@@ -43,8 +44,9 @@ def get_sql_agent_chain():
     return prompt_template | agent
 
 
-def run_sql_agent(question: str, config: RunnableConfig | None = None) -> dict[str, Any]:
-    result = get_sql_agent_chain().invoke({"question": question}, config=config)
+async def run_sql_agent(question: str, config: RunnableConfig | None = None) -> dict[str, Any]:
+    """执行 SQL Agent 链，返回 SQL 语句、查询结果与简要分析。"""
+    result = await get_sql_agent_chain().ainvoke({"question": question}, config=config)
     sql_result = load_tool_json(result, "execute_sql_tool")
 
     return {

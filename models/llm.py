@@ -1,3 +1,9 @@
+"""
+LLM 单例：ChatOpenAI 惰性创建。
+
+get_llm 用 lru_cache 延迟实例化，避免 import 期环境变量未配置就拖垮 FastAPI 启动；
+配置缺失在首次调用时抛 RuntimeError，给出明确提示。
+"""
 from functools import lru_cache
 
 from langchain_openai import ChatOpenAI

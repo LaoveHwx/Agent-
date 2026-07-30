@@ -1,3 +1,9 @@
+"""
+SQL 工具集：把只读 SQL 流程封装为 LangChain tool。
+
+list_tables_tool / table_schema_tool 读业务表结构，check_sql_tool 预校验，
+execute_sql_tool 执行并返回结构化行；SQL_TOOLS 供 SQL Agent 绑定。
+"""
 import json
 from typing import Annotated
 
@@ -13,7 +19,7 @@ from tools.postgres_tool import (
 
 @tool
 def list_tables_tool() -> str:
-    """List business tables and columns available to the SQL Agent."""
+    """列出 SQL Agent 可用的业务表及其列定义。"""
     schema_summary = get_schema_summary(include_internal=False)
     if not schema_summary:
         return "No business tables are available. Ask the developer to seed or connect business data first."
@@ -24,7 +30,7 @@ def list_tables_tool() -> str:
 def table_schema_tool(
     table_name: Annotated[str, "Business table name, optionally qualified with schema, for example public.biz_sales_orders"],
 ) -> str:
-    """Show columns for one business table."""
+    """展示单张业务表的列定义。"""
     try:
         rows = get_table_columns(table_name, include_internal=False)
     except Exception as exc:
@@ -45,7 +51,7 @@ def table_schema_tool(
 def check_sql_tool(
     query: Annotated[str, "Readonly PostgreSQL SELECT/WITH SQL to validate before execution"],
 ) -> str:
-    """Validate readonly business SQL before execution."""
+    """执行前预校验业务只读 SQL。"""
     try:
         readonly_sql = validate_business_sql(query)
         return f"SQL check passed: {readonly_sql}"
@@ -57,7 +63,7 @@ def check_sql_tool(
 def execute_sql_tool(
     query: Annotated[str, "Readonly PostgreSQL SELECT/WITH SQL to execute against business tables"],
 ) -> str:
-    """Execute readonly business SQL and return structured rows."""
+    """执行业务只读 SQL，返回结构化行数据。"""
     try:
         result = query_business_database(query)
     except Exception as exc:

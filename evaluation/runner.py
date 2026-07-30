@@ -1,3 +1,9 @@
+"""
+评测执行器：跑 sql / rag / agent 三类测试套件。
+
+从 datasets/*.jsonl 加载用例，逐条调用对应服务比对期望（非空、来源、任务类型、错误），
+统计通过率与平均耗时，返回整体汇总与各套件明细。
+"""
 import json
 import time
 from pathlib import Path
@@ -15,6 +21,7 @@ DATASET_DIR = Path(__file__).resolve().parent / "datasets"
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    """从 JSONL 文件加载测试用例列表，文件不存在则返回空列表。"""
     if not path.exists():
         return []
 
@@ -28,6 +35,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _case_result(case: dict[str, Any], passed: bool, elapsed_ms: float, detail: dict[str, Any]) -> dict[str, Any]:
+    """组装单条用例的评测结果，包含 id、是否通过、耗时与明细。"""
     return {
         "id": case.get("id"),
         "passed": passed,
@@ -37,6 +45,7 @@ def _case_result(case: dict[str, Any], passed: bool, elapsed_ms: float, detail: 
 
 
 def run_sql_cases() -> list[dict[str, Any]]:
+    """执行 SQL 测试套件，逐条比对查询结果是否非空。"""
     results: list[dict[str, Any]] = []
     for case in _load_jsonl(DATASET_DIR / "sql_cases.jsonl"):
         start = time.perf_counter()
@@ -52,6 +61,7 @@ def run_sql_cases() -> list[dict[str, Any]]:
 
 
 def run_rag_cases() -> list[dict[str, Any]]:
+    """执行 RAG 测试套件，逐条比对检索结果数量与期望来源。"""
     results: list[dict[str, Any]] = []
     for case in _load_jsonl(DATASET_DIR / "rag_cases.jsonl"):
         start = time.perf_counter()
@@ -74,12 +84,13 @@ def run_rag_cases() -> list[dict[str, Any]]:
     return results
 
 
-def run_agent_cases() -> list[dict[str, Any]]:
+async def run_agent_cases() -> list[dict[str, Any]]:
+    """执行 Agent 测试套件，逐条比对最终回答、任务类型与错误。"""
     results: list[dict[str, Any]] = []
     for case in _load_jsonl(DATASET_DIR / "agent_cases.jsonl"):
         start = time.perf_counter()
         try:
-            response = analyze_question(
+            response = await analyze_question(
                 AgentAnalyzeRequest(question=case["question"], session_id=f"eval-{case.get('id')}")
             )
             passed = bool(response.final_answer) if case.get("expect_answer") else True
@@ -103,6 +114,7 @@ def run_agent_cases() -> list[dict[str, Any]]:
 
 
 def _summary(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """统计用例结果汇总，返回总数、通过数、通过率与平均耗时。"""
     total = len(results)
     passed = sum(1 for result in results if result["passed"])
     avg_elapsed_ms = sum(result["elapsed_ms"] for result in results) / total if total else 0
@@ -115,7 +127,8 @@ def _summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def run_evaluation(suites: list[str] | None = None) -> dict[str, Any]:
+async def run_evaluation(suites: list[str] | None = None) -> dict[str, Any]:
+    """运行指定测试套件并返回整体汇总与各套件明细。"""
     selected_suites = suites or ["sql", "rag", "agent"]
     suite_results: dict[str, list[dict[str, Any]]] = {}
 
@@ -124,7 +137,7 @@ def run_evaluation(suites: list[str] | None = None) -> dict[str, Any]:
     if "rag" in selected_suites:
         suite_results["rag"] = run_rag_cases()
     if "agent" in selected_suites:
-        suite_results["agent"] = run_agent_cases()
+        suite_results["agent"] = await run_agent_cases()
 
     all_results = [result for results in suite_results.values() for result in results]
     return {

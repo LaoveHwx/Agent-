@@ -1,9 +1,16 @@
+"""
+Agent 服务层：问答分析的指挥官。
+
+analyze_question 生成追踪 ID -> 调工作流 -> 汇总错误 -> 存状态；
+stream_analyze_question 以 NDJSON 流式推送 start / status / metadata / chunk / done 事件。
+对话历史由 checkpointer 按 thread_id 自动续接，不再手动读写。
+"""
+import asyncio
 import uuid
 import json
 from collections.abc import AsyncIterator
-import asyncio
 
-from graph.center_graph import run_agent_workflow
+from graph.center_graph import run_agent_workflow, run_agent_workflow_stream
 from memory.redis_memory import save_agent_state, save_tool_result
 from schemas.agent import AgentAnalyzeRequest, AgentAnalyzeResponse
 from utils.logger import setup_logger
@@ -27,20 +34,20 @@ def _safe_save_state(task_id: str, result: dict) -> list[str]:
         except Exception as exc:
             logger.warning("tool result save skipped: %s", exc)
             errors.append(f"Tool结果保存失败: {exc}")
-
     return errors
 
-
-def analyze_question(request: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
+# 测试脚本的时候写的
+async def analyze_question(request: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
     """
      agent 模块的指挥官：生成追踪 ID -> 调工作流 -> 汇总错误 -> 存状态
      对话历史由 checkpointer 按 thread_id 自动续接，不再手动读写。
+     graph 全程走 ainvoke，故本函数为 async。
     """
     session_id = request.session_id or str(uuid.uuid4())
     task_id = str(uuid.uuid4())
     question = request.question.strip()
 
-    result = run_agent_workflow(question,
+    result = await run_agent_workflow(question,
                                 session_id=session_id,
                                 task_id=task_id
                                 )# 问题备份
@@ -52,26 +59,52 @@ def analyze_question(request: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
 
     return AgentAnalyzeResponse(**result) #解包
 
-
+# 改进为流式回答
 async def stream_analyze_question(request: AgentAnalyzeRequest) -> AsyncIterator[str]:
+    """流式回答：先按节点推送"正在 X"状态，再流式输出最终答案（NDJSON）。
+
+    事件序列：start -> status(多条) -> metadata(含 errors) -> chunk(多条) -> done。
+    status 来自 run_agent_workflow_stream 按节点推进；chunk 是最终答案分片。
+    """
+    session_id = request.session_id or str(uuid.uuid4())
+    task_id = str(uuid.uuid4())
+    question = request.question.strip()
+
     yield json.dumps({"event": "start"}, ensure_ascii=False) + "\n"
-    response = await asyncio.to_thread(analyze_question, request)
+
+    final_state: dict = {}
+    try:
+        async for kind, payload in run_agent_workflow_stream(question, session_id, task_id):
+            if kind == "status":
+                yield json.dumps({"event": "status", "content": payload}, ensure_ascii=False) + "\n"
+            elif kind == "final":
+                final_state = payload or {}
+    except Exception as exc:
+        logger.warning("stream workflow failed: %s", exc)
+        final_state = {"errors": [f"工作流执行失败: {exc}"]}
+        yield json.dumps({"event": "status", "content": "执行出错，请查看后端日志"}, ensure_ascii=False) + "\n"
+
+    # 收尾：存 agent 状态 + 汇总错误（与 analyze_question 一致）
+    final_state.pop("messages", None)
+    errors = final_state.get("errors", []) + _safe_save_state(task_id, final_state)
+
     yield json.dumps(
         {
             "event": "metadata",
-            "task_id": response.task_id,
-            "session_id": response.session_id,
-            "task_type": response.task_type,
-            "route": response.route,
-            "status": response.status,
-            "errors": response.errors,
+            "task_id": task_id,
+            "session_id": session_id,
+            "task_type": final_state.get("task_type"),
+            "route": final_state.get("route"),
+            "status": final_state.get("status"),
+            "errors": errors,
         },
         ensure_ascii=False,
     ) + "\n"
 
-    content = response.final_answer or ""
-    chunk_size = 80
+    content = final_state.get("final_answer") or ""
+    chunk_size = 30
     for start in range(0, len(content), chunk_size):
         yield json.dumps({"event": "chunk", "content": content[start:start + chunk_size]}, ensure_ascii=False) + "\n"
+        await asyncio.sleep(0)
 
     yield json.dumps({"event": "done"}, ensure_ascii=False) + "\n"

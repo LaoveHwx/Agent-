@@ -1,3 +1,9 @@
+"""
+RAG 数据契约：文档入库与检索的请求/响应模型。
+
+RagIngest* / RagUpload* 约束文档与文件入库格式，
+RagSearch* 约束检索入参与带 score 的结果结构。
+"""
 from typing import Any
 
 from pydantic import BaseModel, Field

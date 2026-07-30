@@ -1,3 +1,10 @@
+"""
+日志与请求中间件：统一 logger 配置 + 请求 ID 透传 + 敏感信息脱敏。
+
+setup_logger 提供带 request_id 的控制台 logger；request_log_middleware 给每个
+HTTP 请求注入 X-Request-ID 并记录耗时与状态；SensitiveDataFilter 在日志落盘前对
+api_key、Authorization、数据库连接串做掩码，避免敏感信息泄漏。
+"""
 import logging
 import re
 import time
@@ -19,12 +26,14 @@ SENSITIVE_PATTERNS = (
 
 class RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
+        """给日志记录注入当前请求 ID。"""
         record.request_id = request_id_context.get()
         return True
 
 
 class SensitiveDataFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
+        """对日志消息中的 api_key、Authorization、数据库连接串做掩码脱敏。"""
         message = record.getMessage()
         for pattern, replacement in SENSITIVE_PATTERNS:
             message = pattern.sub(replacement, message)
@@ -35,6 +44,7 @@ class SensitiveDataFilter(logging.Filter):
 
 
 def setup_logger(name: str = "data_agent") -> logging.Logger:
+    """配置带请求 ID 与脱敏过滤的控制台 logger。"""
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -60,6 +70,7 @@ async def request_log_middleware(
     request: Request,
     call_next: Callable[[Request], Response],
 ) -> Response:
+    """给 HTTP 请求注入请求 ID 并记录耗时与状态的中间件。"""
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     token = request_id_context.set(request_id)
     logger = setup_logger("http")
