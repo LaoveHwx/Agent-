@@ -6,15 +6,15 @@ MCP 客户端：统一拉取多个 MCP 服务端的工具。
 from langchain_mcp_adapters.client import MultiServerMCPClient
 import asyncio
 
-# 配置连接本地自建 MCP 服务的信息
-station_mcp_config = {
-    "url": "http://localhost:8848/streamable",
-    "transport": "streamable-http",
-}
+# # 配置连接本地自建 MCP 服务的信息
+# station_mcp_config = {
+#     "url": "http://localhost:8848/streamable",
+#     "transport": "streamable-http",
+# }
 # 魔搭社区工具 MCP
 # 1.
 chart_mcp_config = {
-    "url": "https://mcp.api-inference.modelscope.ai/8b90a6d096be4b/mcp",
+    "url": "https://mcp.api-inference.modelscope.ai/3ab2a73a151d45/mcp",
     "transport": "streamable-http",
 }
 # 2.
@@ -24,7 +24,7 @@ chart_mcp_config = {
 # tool_name_prefix=True 会给工具名加 "服务名_" 前缀，防止多 server 工具名冲突。
 client = MultiServerMCPClient(
     {
-        "station_mcp": station_mcp_config,
+        # "station_mcp": station_mcp_config,
         "chart_mcp": chart_mcp_config,
     },
     tool_name_prefix=True,
@@ -55,14 +55,14 @@ async def get_mcp_tools():
     return [t for t in tools if t.name in WANTED_MCP_TOOLS]
 
 
-# async def _main():
-#     """打印当前可用的所有 MCP 工具，供联调使用。"""
-#     tools = await get_mcp_tools()
-#     if not tools:
-#         print("（未获取到任何 MCP 工具，请确认 station_mcp 与魔搭服务已启动且 url 正确）")
-#         return
-#     print('\n'.join(f"{i}. {t.name} - {t.description}" for i, t in enumerate(tools)))
-#
-#
-# if __name__ == '__main__':
-#     asyncio.run(_main())
+async def _main():
+    """打印当前可用的所有 MCP 工具，供联调使用。"""
+    tools = await get_mcp_tools()
+    if not tools:
+        print("（未获取到任何 MCP 工具，请确认 station_mcp 与魔搭服务已启动且 url 正确）")
+        return
+    print('\n'.join(f"{i}. {t.name} - {t.description}" for i, t in enumerate(tools)))
+
+
+if __name__ == '__main__':
+    asyncio.run(_main())

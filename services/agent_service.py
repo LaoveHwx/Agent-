@@ -11,7 +11,7 @@ import json
 from collections.abc import AsyncIterator
 
 from graph.center_graph import run_agent_workflow, run_agent_workflow_stream
-from memory.redis_memory import save_agent_state, save_tool_result
+from memory.redis_memory import save_agent_state, save_session_context, save_tool_result
 from schemas.agent import AgentAnalyzeRequest, AgentAnalyzeResponse
 from utils.logger import setup_logger
 logger = setup_logger(__name__) # 做日志
@@ -34,6 +34,23 @@ def _safe_save_state(task_id: str, result: dict) -> list[str]:
         except Exception as exc:
             logger.warning("tool result save skipped: %s", exc)
             errors.append(f"Tool结果保存失败: {exc}")
+        session_id = result.get("session_id")
+        if session_id:
+            try:
+                save_session_context(
+                    session_id,
+                    "last_sql",
+                    {
+                        "task_id": task_id,
+                        "question": result.get("question"),
+                        "sql": result.get("sql"),
+                        "sql_result": result.get("sql_result"),
+                        "analysis": result.get("analysis") or result.get("final_answer"),
+                    },
+                )
+            except Exception as exc:
+                logger.warning("session SQL context save skipped: %s", exc)
+                errors.append(f"会话SQL上下文保存失败: {exc}")
     return errors
 
 # 测试脚本的时候写的
@@ -60,7 +77,7 @@ async def analyze_question(request: AgentAnalyzeRequest) -> AgentAnalyzeResponse
     return AgentAnalyzeResponse(**result) #解包
 
 # 改进为流式回答
-async def stream_analyze_question(request: AgentAnalyzeRequest) -> AsyncIterator[str]:
+async def _legacy_stream_analyze_question(request: AgentAnalyzeRequest) -> AsyncIterator[str]:
     """流式回答：先按节点推送"正在 X"状态，再流式输出最终答案（NDJSON）。
 
     事件序列：start -> status(多条) -> metadata(含 errors) -> chunk(多条) -> done。
@@ -106,5 +123,64 @@ async def stream_analyze_question(request: AgentAnalyzeRequest) -> AsyncIterator
     for start in range(0, len(content), chunk_size):
         yield json.dumps({"event": "chunk", "content": content[start:start + chunk_size]}, ensure_ascii=False) + "\n"
         await asyncio.sleep(0)
+
+    yield json.dumps({"event": "done"}, ensure_ascii=False) + "\n"
+
+
+# Event-based stream implementation. This definition intentionally overrides
+# the legacy final-answer slicing version above.
+async def stream_analyze_question(request: AgentAnalyzeRequest) -> AsyncIterator[str]:
+    """透传 LangGraph 事件流，并输出最终回答 token（NDJSON）。"""
+    session_id = request.session_id or str(uuid.uuid4())
+    task_id = str(uuid.uuid4())
+    question = request.question.strip()
+
+    yield json.dumps(
+        {"event": "start", "task_id": task_id, "session_id": session_id},
+        ensure_ascii=False,
+    ) + "\n"
+
+    final_state: dict = {}
+    streamed_answer = False
+    try:
+        async for kind, payload in run_agent_workflow_stream(question, session_id, task_id):
+            if kind == "final":
+                final_state = payload or {}
+                streamed_answer = bool(final_state.pop("_streamed_answer", False))
+                continue
+
+            event_payload = payload if isinstance(payload, dict) else {"content": payload}
+            if kind == "chunk":
+                streamed_answer = True
+            yield json.dumps({"event": kind, **event_payload}, ensure_ascii=False) + "\n"
+    except Exception as exc:
+        logger.warning("stream workflow failed: %s", exc)
+        final_state = {"errors": [f"工作流执行失败: {exc}"]}
+        yield json.dumps(
+            {"event": "error", "message": "执行出错，请查看后端日志"},
+            ensure_ascii=False,
+        ) + "\n"
+
+    final_state.pop("messages", None)
+    errors = final_state.get("errors", []) + _safe_save_state(task_id, final_state)
+
+    yield json.dumps(
+        {
+            "event": "metadata",
+            "task_id": task_id,
+            "session_id": session_id,
+            "task_type": final_state.get("task_type"),
+            "route": final_state.get("route"),
+            "status": final_state.get("status"),
+            "errors": errors,
+        },
+        ensure_ascii=False,
+    ) + "\n"
+
+    if not streamed_answer and final_state.get("final_answer"):
+        yield json.dumps(
+            {"event": "chunk", "node": "final", "content": final_state["final_answer"]},
+            ensure_ascii=False,
+        ) + "\n"
 
     yield json.dumps({"event": "done"}, ensure_ascii=False) + "\n"

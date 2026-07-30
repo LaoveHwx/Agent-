@@ -89,3 +89,18 @@ def get_tool_result(task_id: str, tool_name: str) -> dict[str, Any] | None:
     client = _redis_client()
     key = f"{KEY_PREFIX}:tool_result:{task_id}:{tool_name}"
     return _json_loads(client.get(key))
+
+
+def save_session_context(session_id: str, context_name: str, context: dict[str, Any]) -> None:
+    """Save reusable session-scoped context, such as the latest SQL result."""
+    client = _redis_client()
+    ttl = _int_value(memory_ttl_seconds, 604800)
+    key = f"{KEY_PREFIX}:session_context:{session_id}:{context_name}"
+    client.setex(key, ttl, _json_dumps(context))
+
+
+def get_session_context(session_id: str, context_name: str) -> dict[str, Any] | None:
+    """Read reusable session-scoped context."""
+    client = _redis_client()
+    key = f"{KEY_PREFIX}:session_context:{session_id}:{context_name}"
+    return _json_loads(client.get(key))
