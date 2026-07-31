@@ -12,3 +12,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 backend_server.log
+
+# 本地测试/评测脚本
+test/

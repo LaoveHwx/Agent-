@@ -8,12 +8,10 @@ query_* 包一层 LIMIT 与 statement_timeout 防爆；get_schema_summary / get_
 import re
 from typing import Any
 
-import psycopg
-from psycopg.rows import dict_row
+from utils.env_util import sql_max_rows, sql_query_timeout
+from utils.postgres_pool import get_connection
 
-from utils.env_util import connection_string, connectioned_string, ps_dsn, sql_max_rows, sql_query_timeout
-
-
+# 内部表，系统表
 SYSTEM_SCHEMAS = {"pg_catalog", "information_schema"}
 INTERNAL_TABLE_NAMES = {
     "rag_documents",
@@ -25,7 +23,7 @@ INTERNAL_TABLE_PREFIXES = (
     "rag_",
     "langgraph_",
 )
-
+# 危险关键词集合，免得改表
 FORBIDDEN_SQL_PATTERN = re.compile(
     r"\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|copy|call|execute|merge)\b",
     re.IGNORECASE,
@@ -34,19 +32,6 @@ INTERNAL_SQL_PATTERN = re.compile(
     r"\b(rag_documents|information_schema|pg_catalog|checkpoints?|checkpoint_blobs|checkpoint_writes)\b",
     re.IGNORECASE,
 )
-
-
-def _dsn() -> str:
-    """解析已配置的 PostgreSQL DSN，缺失时抛错。"""
-    dsn = ps_dsn or connection_string or connectioned_string
-    if not dsn:
-        raise RuntimeError("PostgreSQL DSN is not configured. Please set PS_DSN in .env")
-    return dsn
-
-
-def get_connection():
-    """建立返回字典行结构的 PostgreSQL 连接。"""
-    return psycopg.connect(_dsn(), row_factory=dict_row)
 
 
 def _int_value(raw_value: str | None, default: int) -> int:
@@ -67,7 +52,7 @@ def _normalize_sql(sql: str) -> str:
         raise ValueError("SQL cannot be empty")
     return normalized
 
-
+# 第一层防御
 def validate_readonly_sql(sql: str) -> str:
     """校验 SQL 为只读 SELECT/WITH，拒绝多语句与危险关键字。"""
     normalized = _normalize_sql(sql)
@@ -84,7 +69,7 @@ def validate_readonly_sql(sql: str) -> str:
 
     return normalized
 
-
+# 第二层防御
 def validate_business_sql(sql: str) -> str:
     """在只读校验基础上额外禁止访问内部表。"""
     readonly_sql = validate_readonly_sql(sql)
@@ -103,17 +88,15 @@ def is_internal_table(table_schema: str, table_name: str) -> bool:
         or any(table.startswith(prefix) for prefix in INTERNAL_TABLE_PREFIXES)
     )
 
-
 def is_business_table(table_schema: str, table_name: str) -> bool:
     """判断表是否为业务表（即非内部表）。"""
     return not is_internal_table(table_schema, table_name)
-
-
+# 第三层防御
 def _execute_readonly_query(readonly_sql: str) -> dict[str, Any]:
     """执行已校验的只读 SQL，套 LIMIT 与 statement_timeout 防爆。"""
     max_rows = _int_value(sql_max_rows, 200)
     timeout_ms = _int_value(sql_query_timeout, 10) * 1000
-    wrapped_sql = f"SELECT * FROM ({readonly_sql}) AS agent_query LIMIT {max_rows}"
+    wrapped_sql = f"SELECT * FROM ({readonly_sql}) AS agent_query LIMIT {max_rows}" # 强行包装限制行数上去
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -130,15 +113,43 @@ def _execute_readonly_query(readonly_sql: str) -> dict[str, Any]:
         "max_rows": max_rows,
     }
 
-
+# 权限更多的读用于管理员。运维等。
 def query_database(sql: str) -> dict[str, Any]:
     """校验并执行只读 SQL，返回结构化结果。"""
     return _execute_readonly_query(validate_readonly_sql(sql))
 
-
 def query_business_database(sql: str) -> dict[str, Any]:
     """校验为业务只读 SQL 后执行，返回结构化结果。"""
     return _execute_readonly_query(validate_business_sql(sql))
+
+
+def get_table_list_summary(include_internal: bool = False) -> str:
+    """汇总业务表的表名与注释（不含列），供模型先挑选相关表，避免一次塞入全部列。"""
+    sql = """
+    SELECT
+        n.nspname AS table_schema,
+        c.relname AS table_name,
+        pg_catalog.obj_description(c.oid, 'pg_class') AS table_comment
+    FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind = 'r'
+      AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    ORDER BY n.nspname, c.relname
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            rows = list(cur.fetchall())
+
+    lines = []
+    for row in rows:
+        if not include_internal and not is_business_table(row["table_schema"], row["table_name"]):
+            continue
+        comment = row["table_comment"] or "无注释"
+        lines.append(f"{row['table_schema']}.{row['table_name']}: {comment}")
+
+    return "\n".join(lines)
 
 
 def get_schema_summary(include_internal: bool = False) -> str:
