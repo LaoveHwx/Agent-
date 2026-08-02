@@ -5,6 +5,8 @@
     3.可能还有：初始化数据库...
     最后：前端CORS配置
 """
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
@@ -17,9 +19,21 @@ from api_router.rag_router import rag_router
 from api_router.tool_router import tool_router
 from utils.env_util import cors_origins
 from utils.logger import request_log_middleware, setup_logger
+from utils.postgres_pool import close_postgres_pool
 
 logger = setup_logger(__name__)
-app = FastAPI(title="Enterprise Data Agent API")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """应用关闭时释放 PostgreSQL 连接池。"""
+    try:
+        yield
+    finally:
+        close_postgres_pool()
+
+
+app = FastAPI(title="Enterprise Data Agent API", lifespan=lifespan)
 # 日志中间件
 app.middleware("http")(request_log_middleware)
 app.include_router(health_router)

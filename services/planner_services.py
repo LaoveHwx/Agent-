@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from models.llm import get_llm
 from schemas.planner import PlannerRequest, PlannerResponse, TaskType
+from utils.prompt_loader import load_prompt
 
 
 class TaskClassification(BaseModel):
@@ -44,15 +45,7 @@ def _steps_for(task_type: str) -> list[str]:
     """返回任务类型对应的执行步骤，未知类型回退到复杂分析。"""
     return _STEPS_BY_TASK_TYPE.get(task_type, _STEPS_BY_TASK_TYPE["complex_analysis"])
 
-_CLASSIFY_SYSTEM = """你是一个企业数据分析系统的任务分类助手，根据用户问题判断任务类型。
-
-任务类型说明：
-- knowledge_query：询问业务概念、定义、口径、规则等知识性问题。例如"销售额的口径是什么""客户状态是什么意思""排名规则是怎样的"
-- data_query：明确的结构化数据查询/统计/排名。例如"上月各区域销售额排名""订单数最多的客户""本月销售额多少"
-- complex_analysis：既需查数据又需结合知识做综合分析，或表述模糊需要拆解的问题。例如"分析最近销售下滑的原因"
-
-判断要点：问"是什么/定义/口径/规则"的归 knowledge_query；要"查/统计/排名/多少"具体数据的归 data_query；需要综合分析的归 complex_analysis。
-只返回 knowledge_query / data_query / complex_analysis 三者之一。"""
+_CLASSIFY_SYSTEM = load_prompt("planner")
 async def _classify_by_llm(question: str) -> str:
     """用 LLM 做意图分类，返回 task_type。"""
     prompt = ChatPromptTemplate.from_messages([

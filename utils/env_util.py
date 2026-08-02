@@ -31,6 +31,10 @@ memory_ttl_seconds = os.getenv("MEMORY_TTL_SECONDS", "604800")
 memory_max_messages = os.getenv("MEMORY_MAX_MESSAGES", "20")
 sql_query_timeout = os.getenv("SQL_QUERY_TIMEOUT")
 sql_max_rows = os.getenv("SQL_MAX_ROWS")
+postgres_pool_min_size = os.getenv("POSTGRES_POOL_MIN_SIZE", "1")
+postgres_pool_max_size = os.getenv("POSTGRES_POOL_MAX_SIZE", "10")
+postgres_pool_timeout = os.getenv("POSTGRES_POOL_TIMEOUT", "10")
+postgres_pool_max_lifetime = os.getenv("POSTGRES_POOL_MAX_LIFETIME", "3600")
 
 # 前端跨域白名单：逗号分隔。换端口时改 .env 的 CORS_ORIGINS 即可，无需改代码。
 # 注意：allow_credentials=True 时不能用 "*"，必须显式列出 origin。

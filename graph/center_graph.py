@@ -32,6 +32,7 @@ from memory.redis_memory import get_session_context
 from models.llm import get_llm
 from tools.mcp_tools import get_mcp_tools
 from utils.langchain_utils import last_ai_content
+from utils.prompt_loader import load_prompt
 
 
 class AgentState(TypedDict, total=False):
@@ -158,12 +159,7 @@ async def analyst_node(state: AgentState, config: RunnableConfig) -> AgentState:
     return {**state, "analysis": result["analysis"]}
 
 
-MCP_SYSTEM_PROMPT = """你是企业数据分析系统的数据可视化节点。上游路由已经判断当前结果需要 MCP 可视化，你的职责是选择合适的图表工具并生成可追溯的最终回答。
-工作流程：
-1. 根据用户问题、SQL 查询结果和已有分析，选择最合适的 MCP 图表工具；
-2. 优先调用一个图表工具：柱状/条形用于类别数值比较，折线用于时间趋势，饼图用于占比，散点用于两变量关系，表格/透视表用于明细或汇总，双轴用于两指标同图，直方图用于数据分布，漏斗用于阶段转化，瀑布用于累计增减；
-3. 工具返回后，把图表结果和已有分析整合成简洁回答。
-要求：图表数据必须来自已有 SQL 查询结果，严禁编造；图表尺寸保持紧凑（宽 450px 左右，工具支持尺寸/width 参数时显式传入小值）；如果数据不足以生成任何图表，说明原因并直接返回已有分析。"""
+MCP_SYSTEM_PROMPT = load_prompt("mcp_visualization")
 
 MAX_MCP_STEPS = 5  # 工具调用循环上限，防止模型反复调工具
 
@@ -244,13 +240,7 @@ async def mcp_node(state: AgentState, config: RunnableConfig) -> AgentState:
     return {**state, "analysis": final_analysis}
 
 
-FINAL_SYSTEM_PROMPT = """你是企业数据分析系统的最终回答节点。请基于上游节点已经产生的真实结果，生成面向用户的最终回答。
-要求：
-1. 只使用给定的 SQL 查询结果、RAG 上下文、分析结论和工具结果，不要编造数据；
-2. 直接回答用户问题，优先给结论，再给关键依据；
-3. 如果有图表或工具结果，保留其链接/标识，并解释图表表达的业务含义；
-4. 如果数据不足，明确说明缺口；
-5. 回答简洁、可追溯，不暴露内部节点调度细节。"""
+FINAL_SYSTEM_PROMPT = load_prompt("final")
 
 
 async def final_node(state: AgentState, config: RunnableConfig) -> AgentState:

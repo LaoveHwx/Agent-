@@ -15,7 +15,7 @@ PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
 @lru_cache
 def load_prompt(prompt_name: str) -> str:
-    """Load prompt content by file stem, for example load_prompt("sql_agent")."""
+    """加载提示词字段，输入对应prompt_name即可返回"""
     path = PROMPT_DIR / f"{prompt_name}.json"
     with path.open("r", encoding="utf-8") as file:
         payload: dict[str, Any] = json.load(file)

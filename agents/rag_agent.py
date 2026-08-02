@@ -12,16 +12,13 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 
 from utils.langchain_utils import last_ai_content, load_tool_json
+from utils.prompt_loader import load_prompt
 from models.llm import get_llm
 from rag.retriever import search_documents
 from tools.langchain_rag_tools import RAG_TOOLS
 
 
-RAG_SYSTEM_PROMPT = """你是企业知识库 RAG Agent。工作流程：
-1. 调用 retrieve_company_knowledge_tool 获取指标口径、业务规则、数据字典等知识片段；
-2. 最终回答必须包含可追溯来源；
-3. 信息不足时可多次检索。
-"""
+RAG_SYSTEM_PROMPT = load_prompt("rag_agent")
 
 
 @lru_cache

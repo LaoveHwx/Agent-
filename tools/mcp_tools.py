@@ -43,9 +43,9 @@ WANTED_MCP_TOOLS = {
     "chart_mcp_generate_spreadsheet",      # 表格/透视表
     "chart_mcp_generate_dual_axes_chart",  # 双轴：两指标同图
     "chart_mcp_generate_histogram_chart",  # 直方图：数据分布
-    # -- 按需（业务相关再开）--
-    "chart_mcp_generate_funnel_chart",     # 漏斗：阶段转化
-    "chart_mcp_generate_waterfall_chart",  # 瀑布：累计增减（财务）
+    # -- 按需（业务相关再加本地或者更多工具）--
+    # "chart_mcp_generate_funnel_chart",     # 漏斗：阶段转化
+    # "chart_mcp_generate_waterfall_chart",  # 瀑布：累计增减（财务）
 }
 
 
@@ -55,14 +55,14 @@ async def get_mcp_tools():
     return [t for t in tools if t.name in WANTED_MCP_TOOLS]
 
 
-async def _main():
-    """打印当前可用的所有 MCP 工具，供联调使用。"""
-    tools = await get_mcp_tools()
-    if not tools:
-        print("（未获取到任何 MCP 工具，请确认 station_mcp 与魔搭服务已启动且 url 正确）")
-        return
-    print('\n'.join(f"{i}. {t.name} - {t.description}" for i, t in enumerate(tools)))
-
-
-if __name__ == '__main__':
-    asyncio.run(_main())
+# async def _main():
+#     """打印当前可用的所有 MCP 工具，供联调使用。"""
+#     tools = await get_mcp_tools()
+#     if not tools:
+#         print("（未获取到任何 MCP 工具，请确认 station_mcp 与魔搭服务已启动且 url 正确）")
+#         return
+#     print('\n'.join(f"{i}. {t.name} - {t.description}" for i, t in enumerate(tools)))
+#
+#
+# if __name__ == '__main__':
+#     asyncio.run(_main())
