@@ -1,953 +1,164 @@
-# 企业级 AI Agent 系统开发执行计划
-
-## 项目名称
-
-企业智能数据分析 Agent 系统
-
-# 一、项目目标
-
-开发一个企业级 Data Agent，实现：
-
-用户自然语言输入：
-
-> 分析2026年第一季度销售下降原因
-
-系统自动完成：
-
-1.  理解业务问题
-2.  查询企业数据库
-3.  检索业务知识
-4.  自动生成 SQL
-5.  执行数据分析
-6.  输出可解释报告
-
-------------------------------------------------------------------------
-
-# 二、技术栈与开发环境
-
-## 开发工具
-
-### IDE
-
-PyCharm
-
-### AI辅助开发
-
-CCGUI，codex
-
-------------------------------------------------------------------------
-
-## 后端技术
-
-Python 3.11
-
-核心框架：
-
--   FastAPI
--   LangChain
--   LangGraph
-
-## 数据层
-
-业务数据库：
-
-PostgreSQL
-
-向量检索：
-
-PostgreSQL + pgvector
-
-缓存：
-
-Redis
-
-模型：
-
--   Qwen系列模型
--   OpenAI API
-
-工程：
-
--   Git
--   Docker
-
-------------------------------------------------------------------------
-
-# 三、整体开发周期
-
-总周期：
-
-10周
-
-开发路线：
-
-    环境搭建
-
-    ↓
-
-    项目工程化
-
-    ↓
-
-    PostgreSQL业务数据库
-
-    ↓
-
-    单Agent执行
-
-    ↓
-
-    RAG知识库
-
-    ↓
-
-    Agent Teams
-
-    ↓
-
-    Memory状态管理
-
-    ↓
-
-    评测体系
-
-    ↓
-
-    Docker部署
-
-------------------------------------------------------------------------
-
-# 当前执行状态（2026-07-28）
-
-当前项目主线已调整为：
-
-    LangChain Agent
-
-    ↓
-
-    LangGraph 编排
-
-    ↓
-
-    PostgreSQL 业务数据 + RAG 知识库
-
-    ↓
-
-    Redis 短期/长期记忆
-
-    ↓
-
-    前端流式输出
-
-已完成当前主链路：
-
--   SQL Agent / RAG Agent / Analyst Agent 已基于 LangChain `create_agent`
--   LangGraph 图编译一次并复用 compiled graph
--   条件路由已覆盖 `knowledge_query`、`data_query`、`complex_analysis`
--   `analysis` 作为中间分析字段，`final_answer` 由 final 节点统一生成，避免 key 不匹配
--   Redis 使用显式 `Redis(host, port, db, password)` 构建，当前使用 DB 0
--   RAG 使用 PostgreSQL `rag_documents` 内部表
--   SQL Agent 默认只访问业务表，不访问 `rag_documents`、checkpoint、memory、系统元数据表
--   已加入 demo 业务表和文件上传入口，便于当前功能测试
-
-当前不推进：
-
--   Docker / 部署
--   100 条以上评测集扩展
--   登录和 JWT 实现
--   MCP 工具接入
-
-登录和 JWT 已纳入后续计划；MCP 根据前端和业务真实需求再决定是否接入。
-
-------------------------------------------------------------------------
-
-# 阶段0：开发环境准备（第1天）
-
-## 创建环境
-
-``` bash
-conda create -n data-agent python=3.11
-
-conda activate data-agent
+# 企业级 AI Agent 系统技术栈扩展计划
+
+当前项目已经具备：
+
+- FastAPI 后端服务
+- LangChain / LangGraph Agent 编排
+- SQL Agent / RAG Agent / Analyst Agent
+- PostgreSQL 业务数据查询
+- pgvector 向量检索
+- Redis 会话记忆
+- 基础 Evaluation 回归评测
+- `/v1/agent/stream` 流式输出接口
+- MCP 图表工具接入雏形
+
+因此后续重点不是重新搭建项目，而是在现有基础上补齐 JD 强调的工程化 AI Agent 能力。
+
+## 一、JD 技术要求归纳
+
+两个 JD 对技术栈的核心要求可以归纳为：
+
+- AI 应用开发：RAG、Agent、工作流自动化、Text2SQL。
+- LLM 框架：LangChain、Transformers、主流大模型 API。
+- Prompt Engineering：Prompt 设计、调优、版本管理、效果验证。
+- RAG 技术链路：文档解析、chunk 切分、Embedding、向量检索、Rerank、混合检索。
+- 评测优化：生成质量、召回准确率、响应延迟、成本、稳定性。
+- 后端工程：Python、FastAPI、数据库、接口封装、服务联调。
+- 数据处理：正则、Pandas、PostgreSQL、Elasticsearch、FAISS、MongoDB 等。
+- 全栈能力：了解 React / Vue，能完成基础前端展示。
+- 工程化能力：测试、日志、问题排查、Docker、文档沉淀。
+
+## 二、当前项目技术栈缺口
+
+| 方向 | 当前已有 | 主要缺口 |
+| --- | --- | --- |
+| Agent 编排 | LangGraph 多节点工作流 | 缺少更清晰的节点耗时、工具调用、错误追踪 |
+| Prompt | Prompt 写在代码中 | 缺少 Prompt 文件化、版本管理、A/B 测试 |
+| RAG | pgvector 向量检索 | 缺少混合检索、Rerank、召回评测、引用校验 |
+| Text2SQL | PostgreSQL 查询工具、业务表限制 | 缺少 SQL 安全校验、错误自修复、SQL 质量评测 |
+| Evaluation | SQL/RAG/Agent 基础回归 | 缺少延迟、成本、召回、失败原因分类 |
+| Memory | Redis 会话记忆 | 缺少用户隔离、长期记忆写入策略 |
+| 前端 | 后端已提供 stream 接口 | 缺少 React/Vue 页面展示 Agent 执行过程 |
+| 工程化 | FastAPI、日志、Git | 缺少 Docker Compose、测试命令、依赖文件、CI |
+| 数据处理 | PostgreSQL、pgvector | 缺少 Pandas 处理样例、ES/FAISS/MongoDB 调研或对比 |
+
+## 三、技术栈扩展计划
+
+| 优先级 | 扩展方向 | 建议加入的技术栈 | 当前项目落点 | JD 对应能力 | 验收标准 |
+| --- | --- | --- | --- | --- | --- |
+| P0 | Prompt 管理 | YAML / JSON Prompt 模板、版本号、Prompt Loader | 新建 `prompts/`，抽离 Planner、SQL、RAG、Analyst、Final Prompt | Prompt Engineering、LLM 应用开发 | 修改 Prompt 不需要改 Agent 代码 |
+| P0 | RAG 增强 | pgvector + BM25/全文检索 + Rerank 接口 | 扩展 `rag/retriever.py` 和 RAG 评测集 | 文档解析、Embedding、向量检索、Rerank | RAG 结果返回来源、score、命中情况 |
+| P0 | Evaluation 升级 | JSONL 测试集、指标统计、失败分类、延迟统计 | 扩展 `evaluation/runner.py` | 效果评测、原因分析、方案验证 | 输出 SQL/RAG/Agent 分项指标 |
+| P0 | Text2SQL 安全 | SQL Parser / 白名单校验 / 只读限制 / 超时限制 / psycopg_pool 连接池 | 强化 `tools/postgres_tool.py` 和 `utils/postgres_pool.py` | Text2SQL、数据库、安全稳定性 | 危险 SQL 被拒绝，错误可追踪，数据库连接可复用 |
+| P1 | Agent 可观测性 | trace_id、节点耗时、工具耗时、错误摘要 | 扩展 `graph/center_graph.py` 和日志中间件 | 问题排查、上线支持、稳定性 | 单次请求可追踪完整 Agent 链路 |
+| P1 | 前端展示 | React 或 Vue、NDJSON 流式消费 | 新建 `frontend/`，接入 `/v1/agent/stream` | 全栈开发、系统集成 | 页面展示步骤、工具调用、最终回答 |
+| P1 | 数据处理增强 | Pandas、正则清洗、CSV/JSON 数据处理 | 扩展 RAG 上传解析和评测数据分析 | 数据处理、大规模文本处理 | 能处理结构化/半结构化业务文件 |
+| P1 | 工程化部署 | requirements.txt、Docker Compose、pytest、ruff | 补齐依赖、启动、测试和部署脚本 | Linux 后端、工程交付 | 新环境可按文档稳定启动 |
+| P2 | 检索方案对比 | FAISS / Elasticsearch | 做小规模方案验证，不强制替换 pgvector | 技术调研、方案验证 | 输出对比结论和适用场景 |
+| P2 | 长期存储扩展 | MongoDB | 用于长期记忆或非结构化业务文档元数据 | 数据库、多源数据管理 | 明确是否适合当前项目 |
+| P2 | 模型能力扩展 | Transformers、Fine-tuning 方案 | 先做方案文档，不直接改主链路 | LLM 原理、微调经验 | 明确何时微调、何时优先 RAG/Prompt |
+
+## 四、推荐实施顺序
+
+### 1. Prompt 管理（基础版已完成）
+
+当前 Agent Prompt 已从代码中抽离到独立文件，并记录基础版本信息。后续可以继续补 Prompt A/B 测试和评测绑定。
+
+已新增：
+
+```text
+prompts/
+├── planner.json
+├── sql_agent.json
+├── rag_agent.json
+├── analyst.json
+├── mcp_visualization.json
+└── final.json
 ```
 
-安装：
+已新增统一读取入口：
 
-``` bash
-pip install langgraph
-pip install langchain
-pip install fastapi
-pip install uvicorn
-pip install psycopg2
-pip install pgvector
-pip install redis
+```text
+utils/prompt_loader.py
 ```
 
-验收：
+### 2. 再做 Evaluation 升级
 
-PyCharm可以正常运行Python项目。
+Prompt 和 RAG 优化必须依赖评测结果判断效果。当前评测只适合作基础回归，需要扩展指标。
 
-------------------------------------------------------------------------
+建议新增指标：
 
-# 阶段1：项目基础工程搭建（第1周）
+- SQL 执行成功率
+- SQL 结果非空率
+- RAG 来源命中率
+- RAG top_k 召回情况
+- Agent 任务类型识别准确率
+- 平均响应耗时
+- 错误原因分类
 
-## 目标
+### 3. 然后做 RAG 增强
 
-建立企业级项目结构。
+当前 RAG 以 pgvector 向量检索为主，建议扩展为可对比的检索链路。
 
-目录：
+建议扩展：
 
-    data-agent
+- 向量检索：pgvector
+- 关键词检索：PostgreSQL 全文检索或 BM25 方案
+- 混合排序：vector score + keyword score
+- Rerank：先预留接口，后续可接本地或 API Reranker
+- 引用校验：最终回答必须保留来源信息
 
-    ├── app
-    │
-    ├── agents
-    │   ├── planner.py
-    │   ├── sql_agent.py
-    │   └── rag_agent.py
-    │
-    ├── tools
-    │   ├── postgres_tool.py
-    │   └── search_tool.py
-    │
-    ├── rag
-    │   ├── embedding.py
-    │   └── retriever.py
-    │
-    ├── memory
-    │   └── redis_memory.py
-    │
-    ├── evaluation
-    │
-    ├── database
-    │
-    └── main.py
+### 4. 补强 Text2SQL 安全
 
-完成：
+企业级 Text2SQL 不能只追求能查，还要保证安全边界。
 
--   FastAPI服务
--   配置管理
--   日志系统
--   Git版本管理
+当前已补充：
 
-验收：
+- 使用 `psycopg_pool` 增加 PostgreSQL 连接池。
+- Text2SQL 查询和 RAG 入库/检索共用连接池。
+- FastAPI 关闭时释放连接池。
+- 连接池参数可通过 `.env` 配置：`POSTGRES_POOL_MIN_SIZE`、`POSTGRES_POOL_MAX_SIZE`、`POSTGRES_POOL_TIMEOUT`、`POSTGRES_POOL_MAX_LIFETIME`。
 
-启动服务：
+建议补强：
 
-    uvicorn main:app
+- 只允许 `SELECT`
+- 禁止 `INSERT`、`UPDATE`、`DELETE`、`DROP`、`ALTER`、`TRUNCATE`
+- 禁止访问 `information_schema`、`pg_catalog`、`rag_documents`、memory/checkpoint 表
+- 限制最大返回行数
+- 设置查询超时
+- SQL 执行失败时返回可读错误
 
-返回：
+### 5. 最后补工程化和前端展示
 
-    Agent API running
+为了匹配第二个 JD 的全栈和工程能力，需要补一个轻量前端和基本工程化文件。
 
-------------------------------------------------------------------------
+建议新增：
 
-# 阶段1.5：认证鉴权规划（后续需要时实现）
+- `frontend/`：React 或 Vue 页面
+- `requirements.txt`：固定后端依赖
+- `docker-compose.yml`：PostgreSQL + Redis + API
+- `tests/`：核心服务测试
+- `docs/`：Prompt、RAG、Evaluation、Text2SQL 安全说明
 
-## 目标
+## 五、不建议当前优先投入的方向
 
-为企业级 API 增加登录认证和 JWT Token 机制。
+以下方向 JD 中有提到或相关，但当前项目不建议立刻重投入：
 
-当前阶段只纳入计划，不立即实现，避免过早影响 Agent 主链路开发。
+- Torch / TensorFlow：当前项目是 LLM 应用工程，不是模型训练项目，暂不需要作为主技术栈。
+- Fine-tuning：没有稳定业务数据和评测集前，不建议直接微调。
+- Elasticsearch：可以做检索对比，但当前 pgvector + PostgreSQL 全文检索更符合项目复杂度。
+- MongoDB：除非长期记忆或文档元数据规模扩大，否则不是当前必要项。
+- 大规模评测集：先把小规模评测指标做完整，再扩展到 100 条以上。
 
-## 规划能力
+## 六、最终目标
 
-### 登录接口
+通过以上技术栈扩展，使当前项目从“能运行的 Agent Demo”升级为更符合 JD 的企业级 AI Agent 工程项目：
 
-接口：
-
-    POST /v1/auth/login
-
-输入：
-
-    username
-    password
-
-输出：
-
-    access_token
-    token_type
-    expires_in
-
-### JWT生成
-
-基于：
-
-    SECRET_KEY
-    ALGORITHM
-
-生成：
-
-    access_token
-
-Token Payload建议包含：
-
-    sub
-    user_id
-    role
-    exp
-
-### JWT验证
-
-封装：
-
-    get_current_user()
-
-用于保护后续接口：
-
-    /v1/agent/analyze
-    /v1/tools/sql/query
-    /v1/rag/search
-
-### 防御机制
-
--   密码不得明文保存
--   JWT必须设置过期时间
--   SECRET_KEY不得提交到Git
--   登录失败不暴露具体原因
--   需要统一认证异常响应
-
-## 建议目录
-
-    api_router/auth_router.py
-    schemas/auth.py
-    services/auth_service.py
-    utils/security.py
-
-## 验收
-
-用户登录成功后获取Token。
-
-携带：
-
-    Authorization: Bearer <token>
-
-可以访问受保护接口。
-
-未携带或Token无效时返回：
-
-    401 Unauthorized
-
-------------------------------------------------------------------------
-
-# 阶段2：PostgreSQL业务数据库建设（第2周）
-
-## 目标
-
-模拟企业真实数据环境。
-
-设计业务表：
-
-## 用户表
-
-user
-
-## 产品表
-
-product
-
-## 订单表
-
-order
-
-## 销售表
-
-sales
-
-示例：
-
-``` sql
-sales
-
-id
-
-product_id
-
-date
-
-amount
-
-region
-```
-
-生成：
-
-百万级测试数据。
-
-当前实现：
-
-第一版先使用小规模虚拟业务数据验证 Agent 主链路，不做百万级数据压测。
-
-demo 业务表：
-
-    public.biz_products
-    public.biz_sales_orders
-    public.biz_region_events
-
-初始化接口：
-
-    POST /v1/tools/sql/demo-data
-
-说明：
-
--   demo 数据只用于当前功能验证
--   SQL Agent 只暴露业务表 schema
--   RAG 表 `rag_documents` 属于知识库内部表，不作为 SQL Agent 业务查询对象
-
-实现：
-
-PostgreSQL查询工具。
-
-输入：
-
-    查询需求
-
-输出：
-
-    SQL结果
-
-验收：
-
-用户：
-
-> 查询本月销售额最高产品
-
-Agent：
-
-自动生成SQL并返回结果。
-
-------------------------------------------------------------------------
-
-# 阶段3：单Agent任务执行（第3周）
-
-## 目标
-
-实现基础Agent能力。
-
-架构：
-
-    用户
-
-    ↓
-
-    Planner Agent
-
-    ↓
-
-    Tool调用
-
-    ↓
-
-    结果总结
-
-实现：
-
-## Prompt管理
-
-目录：
-
-    prompts/
-
-    system_prompt.yaml
-
-    sql_prompt.yaml
-
-支持：
-
--   Prompt模板
--   参数注入
--   版本管理
-
-------------------------------------------------------------------------
-
-## Tool开发
-
-第一个Tool：
-
-PostgreSQL Query Tool
-
-功能：
-
-    query_database(sql)
-
-流程：
-
-用户问题
-
-↓
-
-Agent生成SQL
-
-↓
-
-调用数据库
-
-↓
-
-返回结果
-
-↓
-
-总结回答
-
-------------------------------------------------------------------------
-
-# 阶段4：RAG知识库建设（第4-5周）
-
-## 目标
-
-解决企业业务知识问题。
-
-知识来源：
-
--   产品文档
--   财务规则
--   指标定义
--   数据字典
-
-流程：
-
-    文档
-
-    ↓
-
-    文本切分
-
-    ↓
-
-    Embedding
-
-    ↓
-
-    pgvector
-
-    ↓
-
-    Retriever
-
-    ↓
-
-    LLM回答
-
-数据库：
-
-PostgreSQL
-
-新增：
-
-    rag_documents
-
-    embedding vector
-
-    metadata
-
-当前实现：
-
-    POST /v1/rag/init
-    POST /v1/rag/documents
-    POST /v1/rag/upload
-    POST /v1/rag/search
-
-上传入口：
-
--   支持 `.txt`、`.md`、`.csv`、`.json`、`.log`
--   上传后复用文本切分、Embedding、pgvector 入库流程
--   文件来源写入 metadata，方便追溯
-
-优化：
-
-第一版：
-
-向量搜索
-
-第二版：
-
-混合检索：
-
-    Vector Search
-
-    +
-
-    BM25
-
-验收：
-
-用户：
-
-> GMV是什么意思？
-
-Agent：
-
-返回定义，并提供来源。
-
-当前验收：
-
-已使用上传文件验证：
-
-    GMV是什么意思？
-
-返回定义，并包含来源。
-
-------------------------------------------------------------------------
-
-# 阶段5：Agent Teams开发（第6-7周）
-
-## 目标
-
-实现多Agent协作。
-
-架构：
-
-                  Coordinator
-
-                        |
-
-    --------------------------------
-
-    |              |              |
-
-    SQL Agent   RAG Agent   Analyst Agent
-
-## Agent职责
-
-### Coordinator Agent
-
-负责：
-
--   任务拆解
--   Agent调度
--   结果汇总
-
-### SQL Agent
-
-负责：
-
--   数据查询
--   SQL生成
-
-### RAG Agent
-
-负责：
-
--   知识检索
-
-### Analyst Agent
-
-负责：
-
--   数据分析
--   结论生成
-
-使用：
-
-LangGraph
-
-当前实现方法调整：
-
--   模型调用统一使用 LangChain `ChatOpenAI`
--   SQL Agent / RAG Agent / Analyst Agent 使用 `create_agent` 或 LCEL
--   SQL、RAG、长期记忆能力统一封装为 LangChain tools
--   LangGraph 图只编译一次，运行时复用 compiled graph
--   不再保留“无 LLM 降级运行”路径，Agent 必须依赖大模型
--   SQL Agent 只能调用业务表工具，禁止访问 RAG / memory / checkpoint / system metadata 表
-
-状态：
-
-``` python
-state={
-
-question:
-
-sql:
-
-result:
-
-analysis:
-
-}
-```
-
-验收：
-
-复杂问题：
-
-> 为什么华东地区销售下降？
-
-系统自动：
-
-查询销售
-
-↓
-
-查询产品
-
-↓
-
-检索业务规则
-
-↓
-
-生成分析
-
-当前编排：
-
-    knowledge_query:
-    plan -> rag -> final
-
-    data_query:
-    plan -> sql -> analyst -> final
-
-    complex_analysis:
-    plan -> sql -> rag -> analyst -> final
-
-固定 DAG 模板保留：
-
-    plan -> sql -> rag -> analyst -> final
-
-当前测试问题：
-
-    查询销售额最高的产品
-
-已生成业务表 SQL：
-
-    public.biz_sales_orders + public.biz_products
-
-当前测试问题：
-
-    为什么华东地区销售下降
-
-已生成业务表 SQL：
-
-    public.biz_region_events
-
-并结合 RAG 上传文档生成分析。
-
-------------------------------------------------------------------------
-
-# 阶段6：Memory和状态管理（第8周）
-
-## Redis实现
-
-当前实现方法调整：
-
-短期记忆：
-
-    RedisSaver + thread_id=session_id
-
-用于保存当前会话上下文，让同一聊天框内上一句和下一句可以关联。
-
-Redis客户端构建方式：
-
-``` python
-redis_client = Redis(
-    host="192.168.233.129",
-    port=6379,
-    db=0,
-    password=None,
-)
-```
-
-长期记忆：
-
-    用户个性化记忆
-    公司主要情况记忆
-
-以 LangChain tools 形式提供给 Agent 调用。
-
-保存：
-
-    conversation
-
-    agent_state
-
-    tool_result
-
-实现：
-
--   多轮对话
--   状态恢复
--   中断继续
-
-案例：
-
-用户：
-
-第一次：
-
-分析销售
-
-第二次：
-
-继续分析华南地区
-
-Agent保持上下文。
-
-------------------------------------------------------------------------
-
-# 阶段7：Agent评测体系（第9周）
-
-建立100条测试集。
-
-分类：
-
--   简单查询
--   多表分析
--   知识问答
--   复杂推理
-
-指标：
-
-## SQL指标
-
--   SQL生成成功率
--   执行成功率
-
-## Agent指标
-
--   任务完成率
--   Tool调用成功率
-
-## RAG指标
-
--   Recall
--   引用准确率
-
-## 系统指标
-
--   响应时间
--   Token成本
-
-增加：
-
--   Prompt A/B测试
--   模型A/B测试
--   回归测试
-
-当前优先级调整：
-
--   保留小规模回归测试集，用于验证 SQL / RAG / Agent 主链路
--   暂不扩展到 100 条测试集
--   优先保证 Agent/Graph/Memory/Stream 接口稳定
-
-------------------------------------------------------------------------
-
-# 阶段8：工程化部署（第10周）
-
-当前优先级调整：
-
-本阶段暂不推进。
-
-当前项目重点先放在：
-
-    Agent正确回复
-    LangGraph编排稳定
-    Redis短期/长期记忆
-    前端流式输出接口
-
-下一步候选计划：
-
-1.  前端先接 `/v1/agent/stream`，处理 `start`、`metadata`、`chunk`、`done` 事件。
-2.  增强流式输出粒度，把 LangGraph 节点状态也透传给前端，例如 `planner_started`、`sql_done`、`rag_done`。
-3.  细化长期记忆工具策略，明确哪些用户偏好和公司情况允许保存。
-4.  真实业务表接入后，替换当前 demo 业务表，并补充数据字典 RAG 文档。
-5.  登录和 JWT 在主链路稳定后再实现。
-
-Docker部署：
-
-    docker-compose
-
-
-    ├── Agent服务
-
-    ├── PostgreSQL
-
-    ├── Redis
-
-部署：
-
-    FastAPI
-
-    ↓
-
-    Nginx
-
-    ↓
-
-    Docker
-
-------------------------------------------------------------------------
-
-# 最终项目成果
-
-代码仓库：
-
-    data-agent
-
-包含：
-
--   单Agent系统
--   RAG知识库
--   PostgreSQL数据分析
--   Tool Calling
--   Agent Teams
--   Memory
--   Evaluation
-
-------------------------------------------------------------------------
-
-# JD匹配关系 
-
-  JD要求         实现
-  -------------- ---------------------
-  AI Agent开发   LangGraph Agent系统
-  Prompt编排     Prompt管理模块
-  Tool定义调用   PostgreSQL Tool
-  RAG优化        pgvector+混合检索
-  Agent Teams    Coordinator架构
-  上下文管理     Redis Memory
-  评测体系       Evaluation系统
-  工程规范       Docker+Git
-登录功能的密码要存加密哈希。
-------------------------------------------------------------------------
-
-# 项目定位
-
-企业Agent：
-
-    用户需求
-
-    ↓
-
-    任务理解
-
-    ↓
-
-    任务规划
-
-    ↓
-
-    知识检索
-
-    ↓
-
-    工具调用
-
-    ↓
-
-    数据处理
-
-    ↓
-
-    结果验证
-
-    ↓
-
-    生成业务结论
-
-    ↓
-
-    评测优化
-
-目标：
-
-达到企业 Agent 工程师岗位作品要求。
+- 有 Agent 编排
+- 有 RAG 检索增强
+- 有 Text2SQL 安全边界
+- 有 Prompt 调优体系
+- 有 Evaluation 指标闭环
+- 有 Redis Memory
+- 有前端展示
+- 有工程化部署和文档沉淀

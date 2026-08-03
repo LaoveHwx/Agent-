@@ -1,8 +1,7 @@
 """
-Prompt loader: read versioned prompt files from the prompts directory.
-
-Prompt files use JSON so the project does not need an extra YAML dependency.
-Each file should contain: name, version, description, content.
+提示词管理：读取提示词图书馆的提示词文件
+提示词文件用json，所以不必需要额外的yaml依赖。
+每个文档一般包括：name, version, description, content.
 """
 import json
 from functools import lru_cache
@@ -24,14 +23,3 @@ def load_prompt(prompt_name: str) -> str:
     if not isinstance(content, str) or not content.strip():
         raise ValueError(f"Prompt file {path} must contain non-empty string field: content")
     return content.strip()
-
-
-@lru_cache
-def load_prompt_metadata(prompt_name: str) -> dict[str, Any]:
-    """Load prompt metadata without the content body."""
-    path = PROMPT_DIR / f"{prompt_name}.json"
-    with path.open("r", encoding="utf-8") as file:
-        payload: dict[str, Any] = json.load(file)
-
-    payload.pop("content", None)
-    return payload

@@ -6,8 +6,8 @@
     数据查询:   planner -> sql -> analyst -> mcp -> final
     复杂分析:   planner -> sql -> rag -> analyst -> mcp -> final
 
-mcp 节点用「绑定图表 MCP 工具的大模型」对数据做可视化（柱状/折线/饼图/表格等）；
-MCP 工具为 async-only，故所有节点统一 async、graph 全程走 ainvoke。
+mcp 节点用「绑定 MCP 工具的大模型」对数据做可视化（柱状/折线/饼图/表格等）或
+数值计算（统计描述/增长率/数值格式化）；MCP 工具为 async-only，故所有节点统一 async、graph 全程走 ainvoke。
 
 对话历史：
     state.messages 由 RedisSaver checkpointer 按 thread_id 自动续接，
@@ -346,6 +346,16 @@ MCP_INTENT_KEYWORDS = (
     "chart", "visual", "visualize", "plot",
 )
 
+# 数值计算意图：纯数值问题(无画图诉求)也走 mcp，用自建数值计算 Skill 做统计/增长率/格式化。
+NUMERIC_ANALYSIS_KEYWORDS = (
+    "环比", "同比", "增长率", "增速", "增幅", "涨幅", "降幅", "变化率",
+    "均值", "平均值", "平均", "中位数", "众数", "标准差", "方差",
+    "分位数", "四分位", "描述统计", "统计描述", "统计量",
+    "占比", "百分比", "比率",
+    "千分位", "格式化",
+    "汇总", "合计", "总计", "累计",
+)
+
 
 def _sql_rows(state: AgentState) -> list:
     sql_result = state.get("sql_result")
@@ -356,13 +366,19 @@ def _sql_rows(state: AgentState) -> list:
 
 
 def route_after_analysis(state: AgentState) -> str:
-    """analyst 之后按需路由：只有结果适合/明确需要可视化时才调用 MCP。"""
+    """analyst 之后按需路由：图表可视化或数值计算意图时调用 MCP。"""
     if state.get("task_type") == "knowledge_query":
         return "final"
 
     sql_result = state.get("sql_result")
     if not isinstance(sql_result, dict) or sql_result.get("error"):
         return "final"
+
+    text = f"{state.get('question', '')}\n{state.get('analysis', '')}".lower()
+
+    # 数值计算意图(环比/统计/格式化等)走 MCP：工具直接消费 SQL 数值，不受多行多列限制。
+    if any(keyword.lower() in text for keyword in NUMERIC_ANALYSIS_KEYWORDS):
+        return "mcp"
 
     rows = _sql_rows(state)
     row_count = sql_result.get("row_count")
@@ -375,7 +391,6 @@ def route_after_analysis(state: AgentState) -> str:
     if not isinstance(columns, list) or len(columns) < 2:
         return "final"
 
-    text = f"{state.get('question', '')}\n{state.get('analysis', '')}".lower()
     if any(keyword.lower() in text for keyword in MCP_INTENT_KEYWORDS):
         return "mcp"
 
@@ -493,7 +508,7 @@ NODE_STATUS = {
     "sql": "正在查询数据库...",
     "rag": "正在检索知识库...",
     "analyst": "正在汇总分析...",
-    "mcp": "正在调用工具、生成图表...",
+    "mcp": "正在调用工具、生成图表与数值计算...",
     "final": "正在组织最终回答",
 }
 async def _legacy_run_agent_workflow_stream(question: str, session_id: str, task_id: str):
@@ -539,7 +554,7 @@ AGENT_STEP_META = {
     "sql": {"title": "数据查询", "description": "生成并执行只读 SQL，获取结构化数据"},
     "rag": {"title": "知识检索", "description": "检索企业知识库，补充指标口径和业务规则"},
     "analyst": {"title": "分析归纳", "description": "汇总 SQL 结果、知识上下文和历史记忆"},
-    "mcp": {"title": "工具执行", "description": "按需调用 MCP 图表工具生成可视化结果"},
+    "mcp": {"title": "工具执行", "description": "按需调用 MCP 图表或数值计算工具生成结果"},
     "final": {"title": "生成回答", "description": "组织最终答复并进行 token 流式输出"},
 }
 
