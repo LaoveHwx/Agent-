@@ -9,7 +9,7 @@ from functools import lru_cache
 
 from langchain_openai import ChatOpenAI
 
-from utils.env_util import api_key, base_url, model_name
+from utils.env_util import api_key, api_key2, base_url, base_url2, model_max_tokens, model_name, model_name2
 from utils.llm_callback import LLMObservabilityHandler
 
 
@@ -33,6 +33,23 @@ def get_llm() -> ChatOpenAI:
         api_key=_require(api_key, "API_KEY"),
         base_url=_require(base_url, "BASE_URL"),
         temperature=0.2,
-        max_tokens=2048,
+        max_tokens=int(model_max_tokens),
+        callbacks=[LLMObservabilityHandler()],
+    )
+
+
+@lru_cache
+def get_llm2() -> ChatOpenAI:
+    """惰性创建第二个 ChatOpenAI 单例。
+
+    用于低成本、低温度的前置识别类任务，例如用户问题分类、记忆路由判断。
+    与主模型隔离配置，避免识别任务挤占主模型的上下文和限流预算。
+    """
+    return ChatOpenAI(
+        model=_require(model_name2, "MODEL_NAME2"),
+        api_key=_require(api_key2, "API_KEY2"),
+        base_url=_require(base_url2, "BASE_URL2"),
+        temperature=0,
+        max_tokens=1024,
         callbacks=[LLMObservabilityHandler()],
     )

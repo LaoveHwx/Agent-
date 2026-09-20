@@ -52,6 +52,9 @@ class AgentState(TypedDict, total=False):
     route: str            # 当前处理节点
     previous_question: str | None
     context_task_id: str | None
+    memory_route: str
+    memory_reason: str
+    memory_confidence: float
 
 
 async def planner_node(state: AgentState) -> AgentState:
@@ -64,6 +67,9 @@ async def planner_node(state: AgentState) -> AgentState:
         "task_type": plan["task_type"],
         "route": plan["task_type"],
         "plan": plan["plan"],
+        "memory_route": plan.get("memory_route", "none"),
+        "memory_reason": plan.get("memory_reason", ""),
+        "memory_confidence": plan.get("memory_confidence", 0.0),
         "errors": state.get("errors", []),
     }
 
@@ -161,7 +167,7 @@ async def analyst_node(state: AgentState, config: RunnableConfig) -> AgentState:
 
 MCP_SYSTEM_PROMPT = load_prompt("mcp_visualization")
 
-MAX_MCP_STEPS = 5  # 工具调用循环上限，防止模型反复调工具
+MAX_MCP_STEPS = 3  # 一次选择工具、一次执行、一次整理结果通常足够
 
 
 def _message_content_text(content: Any) -> str:
@@ -179,6 +185,18 @@ def _message_content_text(content: Any) -> str:
                     parts.append(str(text))
         return "".join(parts)
     return str(content) if content else ""
+
+
+def _format_recent_messages(messages: list, limit: int = 8) -> str:
+    """Format recent short-term conversation context for the final answer."""
+    rows: list[str] = []
+    for message in messages[-limit:]:
+        content = _message_content_text(getattr(message, "content", ""))
+        if not content:
+            continue
+        role = message.__class__.__name__.replace("Message", "")
+        rows.append(f"- {role}: {content}")
+    return "\n".join(rows)
 
 
 async def mcp_node(state: AgentState, config: RunnableConfig) -> AgentState:
@@ -250,12 +268,17 @@ async def final_node(state: AgentState, config: RunnableConfig) -> AgentState:
     final_answer = ""
 
     if analysis:
+        recent_messages = _format_recent_messages(list(state.get("messages", [])))
         messages = [
             SystemMessage(content=FINAL_SYSTEM_PROMPT),
             HumanMessage(content=(
                 f"用户问题：{state.get('question', '')}\n\n"
+                f"短期 Redis 会话上下文：\n{recent_messages}\n\n"
                 f"上一轮数据问题：{state.get('previous_question', '')}\n\n"
                 f"任务类型：{state.get('task_type')}\n\n"
+                f"记忆调度判断：{state.get('memory_route', 'none')}\n"
+                f"判断理由：{state.get('memory_reason', '')}\n"
+                f"置信度：{state.get('memory_confidence', 0.0)}\n\n"
                 f"执行计划：{state.get('plan', [])}\n\n"
                 f"SQL：{state.get('sql')}\n\n"
                 f"SQL 查询结果：{state.get('sql_result')}\n\n"
@@ -324,36 +347,17 @@ def route_after_rag(state: AgentState) -> str:
     return "analyst"
 
 MCP_INTENT_KEYWORDS = (
-    "柱状", "柱形", "柱状图", "条形", "条形图", "对比", "比较", "排名", "排行",
-    "bar", "column", "compare", "comparison", "rank", "ranking",
-    "折线", "折线图", "趋势", "走势", "变化", "时间序列",
-    "line", "trend", "time series",
-    "饼图", "占比", "比例", "构成", "份额",
-    "pie", "share", "proportion", "percentage",
-    "散点", "散点图", "相关性", "关系", "两变量",
-    "scatter", "correlation", "relationship",
-    "表格", "透视表", "明细表", "汇总表",
-    "table", "spreadsheet", "pivot",
-    "双轴", "双坐标", "双指标", "两个指标", "同图",
-    "dual axes", "dual-axis", "two metrics",
-    "直方图", "分布", "频率", "频次", "区间分布",
-    "histogram", "distribution", "frequency",
-    "漏斗", "转化", "转化率", "阶段", "流程",
-    "funnel", "conversion", "stage",
-    "瀑布", "瀑布图", "累计", "增减", "变动拆解", "财务",
-    "waterfall", "cumulative", "increment", "decrement", "financial",
-    "图", "图表", "可视化", "画图", "生成图",
-    "chart", "visual", "visualize", "plot",
+    "柱状图", "柱形图", "条形图", "折线图", "饼图", "散点图", "双轴图", "直方图",
+    "透视表", "生成表格", "图表", "可视化", "画图", "生成图", "做图", "出图",
+    "chart", "visualize", "plot",
 )
 
 # 数值计算意图：纯数值问题(无画图诉求)也走 mcp，用自建数值计算 Skill 做统计/增长率/格式化。
 NUMERIC_ANALYSIS_KEYWORDS = (
-    "环比", "同比", "增长率", "增速", "增幅", "涨幅", "降幅", "变化率",
-    "均值", "平均值", "平均", "中位数", "众数", "标准差", "方差",
-    "分位数", "四分位", "描述统计", "统计描述", "统计量",
-    "占比", "百分比", "比率",
-    "千分位", "格式化",
-    "汇总", "合计", "总计", "累计",
+    "计算环比", "计算同比", "计算增长率", "计算增速", "计算变化率",
+    "计算均值", "计算平均值", "计算中位数", "计算众数", "计算标准差", "计算方差",
+    "中位数", "众数", "标准差", "方差", "分位数", "四分位",
+    "描述统计", "统计描述", "千分位", "格式化数值",
 )
 
 
@@ -374,7 +378,8 @@ def route_after_analysis(state: AgentState) -> str:
     if not isinstance(sql_result, dict) or sql_result.get("error"):
         return "final"
 
-    text = f"{state.get('question', '')}\n{state.get('analysis', '')}".lower()
+    # 只依据用户原话决定是否调用工具，避免分析文本中的“趋势”等词误触发 MCP。
+    text = state.get("question", "").lower()
 
     # 数值计算意图(环比/统计/格式化等)走 MCP：工具直接消费 SQL 数值，不受多行多列限制。
     if any(keyword.lower() in text for keyword in NUMERIC_ANALYSIS_KEYWORDS):
@@ -392,10 +397,6 @@ def route_after_analysis(state: AgentState) -> str:
         return "final"
 
     if any(keyword.lower() in text for keyword in MCP_INTENT_KEYWORDS):
-        return "mcp"
-
-    # 复杂分析通常需要比较多行结果，图表能帮助说明；普通明细查询默认不打扰 MCP。
-    if state.get("task_type") == "complex_analysis" and row_count > 1:
         return "mcp"
 
     return "final"
@@ -479,6 +480,7 @@ async def run_agent_workflow(question: str, session_id: str, task_id: str) -> Ag
             "rag_context": [],
         },
         config={
+            "recursion_limit": 40,
             "configurable": {
                 "thread_id": session_id,
                 "user_id": session_id,
@@ -530,7 +532,7 @@ async def _legacy_run_agent_workflow_stream(question: str, session_id: str, task
         "errors": [],
         "rag_context": [],
     }
-    config = {"configurable": {"thread_id": session_id, "user_id": session_id}}
+    config = {"recursion_limit": 40, "configurable": {"thread_id": session_id, "user_id": session_id}}
 
     final_state: dict = {}
     task_type: str | None = None
@@ -597,7 +599,7 @@ async def run_agent_workflow_stream(question: str, session_id: str, task_id: str
         "errors": [],
         "rag_context": [],
     }
-    config = {"configurable": {"thread_id": session_id, "user_id": session_id}}
+    config = {"recursion_limit": 40, "configurable": {"thread_id": session_id, "user_id": session_id}}
 
     final_state: dict = {}
     streamed_answer = False
@@ -625,19 +627,9 @@ async def run_agent_workflow_stream(question: str, session_id: str, task_id: str
                     final_state.update(output)
             continue
 
-        if event_type == "on_tool_start":
-            yield "tool_start", {
-                "node": node,
-                "tool": event_name,
-                "input": (event.get("data") or {}).get("input"),
-            }
-            continue
-
-        if event_type == "on_tool_end":
-            yield "tool_end", {
-                "node": node,
-                "tool": event_name,
-            }
+        # 工具调用事件（on_tool_start / on_tool_end）不透传到流式响应：
+        # 工具名与入参会暴露内部实现，工具观测已在 utils/llm_callback.py 服务端记录。
+        if event_type in ("on_tool_start", "on_tool_end"):
             continue
 
         if event_type == "on_chat_model_stream" and node in ANSWER_STREAM_NODES:

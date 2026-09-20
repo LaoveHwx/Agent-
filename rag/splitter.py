@@ -1,11 +1,12 @@
 """
-文本切分：按 markdown 标题分块，超长节再按段落/字符兜底。
-
-split_text 优先按 #/##/### 切分保证小节整块不被腰斩，单节超 chunk_size 时退化为
-段落聚合或字符滑窗；chunk_size / overlap 由环境变量配置。
+文本切分：用 langchain 的 splitter 组合，保留原"标题整块不腰斩"语义。
 """
 import os
-import re
+
+from langchain_text_splitters import (
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
 
 
 def _int_env(key: str, default: int) -> int:
@@ -20,52 +21,20 @@ def _int_env(key: str, default: int) -> int:
     return value if value > 0 else default
 
 
-def _slide(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
-    """纯字符滑窗（带 overlap），仅作无法按结构切分时的兜底。"""
-    chunks: list[str] = []
-    start = 0
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        piece = text[start:end].strip()
-        if piece:
-            chunks.append(piece)
-        if end >= len(text):
-            break
-        start = max(end - chunk_overlap, start + 1)
-    return chunks
-
-
-def _split_large_section(section: str, chunk_size: int, chunk_overlap: int) -> list[str]:
-    """单节超过 chunk_size 时：先按段落聚合，段落仍超长再按字符滑窗兜底。"""
-    paragraphs = re.split(r"\n\s*\n", section)
-    chunks: list[str] = []
-    buffer = ""
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
-            continue
-        candidate = f"{buffer}\n\n{para}" if buffer else para
-        if len(candidate) <= chunk_size:
-            buffer = candidate
-            continue
-        if buffer:
-            chunks.append(buffer)
-            buffer = ""
-        if len(para) <= chunk_size:
-            buffer = para
-        else:
-            chunks.extend(_slide(para, chunk_size, chunk_overlap))
-    if buffer:
-        chunks.append(buffer)
-    return chunks
+# 按 markdown 标题切的层级配置：标题层级 -> metadata 键名
+_HEADERS_TO_SPLIT_ON = [
+    ("#", "h1"),
+    ("##", "h2"),
+    ("###", "h3"),
+]
 
 
 def split_text(text: str) -> list[str]:
-    """按 markdown 标题（# / ## / ### …）切分，保证每个小节（如 ## Qn 问答）整块不被腰斩；
-    单节超过 chunk_size 时再按段落/字符兜底切。chunk_size / overlap 由环境变量配置。
+    """按 markdown 标题切分，超长节再用 RecursiveCharacterTextSplitter 兜底。
 
-    - Q&A 这类结构化文档：每个问答独立成块，检索最精准；
-    - 无标题的纯文本：退化为按段落/字符切分（仍比纯字符滑窗更尊重段落边界）。
+    - 有标题的结构化文档：每个小节（如 ## Qn 问答）先整块成 Document，超长再切；
+    - 无标题的纯文本：MarkdownHeaderTextSplitter 会把整段当一个 Document，
+      交由 RecursiveCharacterTextSplitter 按 chunk_size 切，等价于原段落/字符兜底。
     """
     chunk_size = _int_env("RAG_CHUNK_SIZE", 800)
     chunk_overlap = _int_env("RAG_CHUNK_OVERLAP", 120)
@@ -75,13 +44,15 @@ def split_text(text: str) -> list[str]:
     if len(cleaned) <= chunk_size:
         return [cleaned]
 
-    # 按行首的 markdown 标题切分（标题留在块首），标题前的引言自成一块
-    sections = [s.strip() for s in re.split(r"(?m)(?=^#{1,}\s)", cleaned) if s.strip()]
+    # 1) 按 markdown 标题切，保证小节整块不被腰斩
+    md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=_HEADERS_TO_SPLIT_ON)
+    md_chunks = md_splitter.split_text(cleaned)
 
-    chunks: list[str] = []
-    for section in sections:
-        if len(section) <= chunk_size:
-            chunks.append(section)
-        else:
-            chunks.extend(_split_large_section(section, chunk_size, chunk_overlap))
-    return chunks
+    # 2) 超长节再按字符递归切分（分隔符优先级：段落 > 换行 > 空格 > 字符）
+    rc_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    final_docs = rc_splitter.split_documents(md_chunks)
+
+    return [doc.page_content for doc in final_docs if doc.page_content and doc.page_content.strip()]

@@ -10,8 +10,6 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from utils.env_util import (
-    connection_string,
-    connectioned_string,
     postgres_pool_max_lifetime,
     postgres_pool_max_size,
     postgres_pool_min_size,
@@ -22,7 +20,7 @@ from utils.env_util import (
 
 def _dsn() -> str:
     """解析已配置的 PostgreSQL DSN"""
-    dsn = ps_dsn or connection_string or connectioned_string
+    dsn = ps_dsn
     if not dsn:
         raise RuntimeError("PostgreSQL DSN is not configured. Please set PS_DSN in .env")
     return dsn

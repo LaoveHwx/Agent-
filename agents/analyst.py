@@ -36,10 +36,18 @@ async def run_analyst_agent(state: dict, config: RunnableConfig | None = None) -
     sql_result = state.get("sql_result")
     rag_context = state.get("rag_context", [])
     errors = state.get("errors", [])
+    memory_route = state.get("memory_route", "none")
+    memory_reason = state.get("memory_reason", "")
+    memory_confidence = state.get("memory_confidence", 0.0)
 
     context = f"""
 用户问题：
 {question}
+
+记忆调度判断：
+- 路由：{memory_route}
+- 理由：{memory_reason}
+- 置信度：{memory_confidence}
 
 SQL Agent 结果：
 {sql_result}
@@ -51,6 +59,7 @@ RAG Agent 结果：
 {errors}
 
 请输出最终分析结论。
+要求明确标注结论依据来自 SQL、RAG、短期会话上下文还是长期记忆；如果记忆调度可能选错来源，要说明偏差风险。
 """
     context_message = HumanMessage(content=context)
 

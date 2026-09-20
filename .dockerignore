@@ -1,0 +1,10 @@
+.git
+.idea
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*.log
+Agent_front/
+test/

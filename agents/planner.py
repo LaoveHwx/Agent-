@@ -13,4 +13,7 @@ async def run_planner(question: str):
         "question": plan.question,
         "task_type": plan.task_type,
         "plan": plan.steps,
+        "memory_route": plan.memory_route,
+        "memory_reason": plan.memory_reason,
+        "memory_confidence": plan.memory_confidence,
     }

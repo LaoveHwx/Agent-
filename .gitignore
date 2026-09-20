@@ -15,3 +15,8 @@ backend_server.log
 
 # 本地测试/评测脚本
 test/
+
+# database/demo_business_seed.py 是公开的演示数据实例；真实业务数据不要提交
+
+# 个人开发计划文档（仅本地保留）
+企业级AI_Agent系统开发执行计划.md

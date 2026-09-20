@@ -1,18 +1,16 @@
 # 企业智能数据分析 Agent 系统
 
-这是一个面向企业数据分析场景的 AI Agent 项目。用户输入自然语言问题后，系统可以进行任务规划、业务知识检索、SQL 查询、数据分析，并输出可解释的回答。
+面向企业数据分析场景的 AI Agent 系统：用自然语言提问，系统自动完成任务规划、业务知识检索（RAG）、SQL 查询与数据分析，并输出可解释的回答。
 
-详细开发路线见：[企业级AI_Agent系统开发执行计划.md](企业级AI_Agent系统开发执行计划.md)。
+## 系统架构
 
-## 项目功能
-
-- Agent 编排：基于 LangGraph 编排 Planner、SQL Agent、RAG Agent、Analyst Agent。
-- Text2SQL：根据用户问题生成并执行 PostgreSQL 查询。
-- RAG 知识库：支持文档上传、文本切分、Embedding、pgvector 检索。
-- Memory：基于 Redis 保存会话上下文、Agent 状态和工具结果。
-- 流式输出：`/v1/agent/stream` 支持 NDJSON 事件流，便于前端展示执行过程。
-- Evaluation：提供 SQL、RAG、Agent 基础回归评测入口。
-- MCP 工具：预留 MCP 图表工具接入能力。
+- **Agent 编排**：基于 LangGraph 编排 Planner、SQL Agent、RAG Agent、Analyst Agent 与 MCP 工具节点。
+- **Text2SQL**：自然语言生成并执行 PostgreSQL 只读查询。
+- **RAG 知识库**：文档上传、切分、Embedding、pgvector 向量检索。
+- **Memory**：Redis 保存会话上下文与 Agent 状态。
+- **流式输出**：`/v1/agent/stream` 返回 NDJSON 事件流，前端可实时展示执行步骤与打字机效果。
+- **MCP 工具**：自建数值计算 server + 远程图表 server，失败自动降级不阻断回答。
+- **Evaluation**：SQL / RAG / Agent 回归评测。
 
 ## 环境安装
 
@@ -40,22 +38,15 @@ pip install fastmcp
 pip install pgvector pandas
 ```
 
-说明：
-
-- 当前代码使用 `psycopg` 连接 PostgreSQL，因此安装 `psycopg[binary]`。
-- `python-multipart` 用于支持 RAG 文件上传接口。
-- `langgraph-checkpoint-redis` 用于 Redis 会话检查点。
-- `fastmcp`、`langchain-mcp-adapters` 用于 MCP 工具接入。
-
 ## 外部服务
 
-运行完整功能前，需要准备：
+运行前需要准备：
 
-- PostgreSQL：业务数据表和 RAG 向量表。
-- pgvector：PostgreSQL 向量检索扩展。
-- Redis：会话记忆和状态保存。
-- Qwen/OpenAI-compatible Chat Model：大模型接口。
-- Ollama Embeddings：可选，用于本地 Embedding。
+- **PostgreSQL**：业务数据表和 RAG 向量表
+- **pgvector**：PostgreSQL 向量检索扩展
+- **Redis**：会话记忆和状态保存
+- **Qwen/OpenAI-compatible Chat Model**：大模型接口
+- **Ollama Embeddings**：可选，本地 Embedding
 
 ## 环境变量
 
@@ -87,11 +78,13 @@ RAG_CHUNK_SIZE=800
 RAG_CHUNK_OVERLAP=120
 ```
 
-## 启动项目
-
-在项目根目录执行：
+## 启动步骤
 
 ```bash
+# 1. 启动自建 MCP 数值计算服务（可选，失败不影响主流程）
+python mcp_station/sever.py
+
+# 2. 启动后端
 uvicorn main:app --reload
 ```
 
@@ -104,79 +97,37 @@ Docs: http://127.0.0.1:8000/docs
 
 ## 常用接口
 
-健康检查：
-
 ```text
-GET /health
+GET  /health                     健康检查
+POST /v1/tools/sql/demo-data     初始化演示业务数据
+GET  /v1/tools/sql/schema        查看业务表结构
+POST /v1/rag/init                初始化 RAG 知识库表
+POST /v1/rag/upload              上传知识库文件
+POST /v1/rag/search              检索知识库
+POST /v1/agent/analyze           Agent 同步问答
+POST /v1/agent/stream            Agent 流式问答（NDJSON）
+POST /v1/evaluation/run          运行评测
 ```
 
-初始化 demo 业务数据：
+## 前端使用
 
-```text
-POST /v1/tools/sql/demo-data
+前端项目位于 `Agent_front`（Vue 2 + element-ui）：
+
+```bash
+cd Agent_front
+npm run dev          # http://localhost:8080
 ```
 
-查看业务表结构：
+登录账号由 `.env` 中的 `APP_USERNAME` / `APP_PASSWORD` 配置；后端会验证登录并签发有效期为 12 小时的访问令牌。Docker 使用说明见 `README.Docker.md`。
 
-```text
-GET /v1/tools/sql/schema
-```
+## 推荐使用顺序
 
-初始化 RAG 表：
+1. 启动 PostgreSQL（含 pgvector）与 Redis。
+2. 配置 `.env`。
+3. `POST /v1/tools/sql/demo-data` 初始化演示数据。
+4. `POST /v1/rag/init` 初始化知识库表，上传业务文档。
+5. 启动前端，用自然语言提问。
 
-```text
-POST /v1/rag/init
-```
-
-上传知识库文件：
-
-```text
-POST /v1/rag/upload
-```
-
-检索知识库：
-
-```text
-POST /v1/rag/search
-```
-
-Agent 问答：
-
-```text
-POST /v1/agent/analyze
-```
-
-Agent 流式问答：
-
-```text
-POST /v1/agent/stream
-```
-
-运行评测：
-
-```text
-POST /v1/evaluation/run
-```
-
-## 测试顺序
-
-1. 创建并激活 Python 3.11 虚拟环境。
-2. 安装依赖。
-3. 配置 `.env`。
-4. 启动 PostgreSQL、pgvector 和 Redis。
-5. 执行 `uvicorn main:app --reload` 启动后端。
-6. 调用 `/v1/tools/sql/demo-data` 初始化 demo 数据。
-7. 调用 `/v1/rag/init` 初始化知识库表。
-8. 上传业务文档到 `/v1/rag/upload`。
-9. 使用 `/v1/agent/analyze` 或 `/v1/agent/stream` 提问。
-
-使用：开启本地
--cd 到前端所在文件夹
--npm run build 启动
--python.exe -m http.server 8088 --directory dist  挂载
-启动http://localhost:8088
- or
-http://localhost:8088/#/
 ## 示例问题
 
 ```text

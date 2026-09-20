@@ -101,12 +101,10 @@ class LLMObservabilityHandler(BaseCallbackHandler):
     ) -> None:
         model = self._model_name(serialized)
         prompt_text = prompts[0] if prompts else ""
-        logger.info(
-            "llm_start model=%s prompt_len=%d prompt=%s",
-            model,
-            len(prompt_text),
-            self._brevity(prompt_text),
-        )
+        # INFO 只记长度，提示词正文降级 DEBUG（避免刷屏淹没其他日志）。
+        # 需要排查提示词时用 DEBUG 级别运行即可看到。
+        logger.info("llm_start model=%s prompt_len=%d", model, len(prompt_text))
+        logger.debug("llm_start prompt=%s", self._brevity(prompt_text))
 
     def on_llm_end(self, response, **kwargs: Any) -> None:
         input_t, output_t, total_t = self._extract_usage(response)

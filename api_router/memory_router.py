@@ -6,8 +6,8 @@ GET /memory 探活、/memory/sessions/{id} 取会话历史、/memory/tasks/{id} 
 """
 from fastapi import APIRouter, HTTPException
 
-from schemas.memory import AgentStateResponse, ConversationResponse, MemoryStatusResponse
-from services.memory_service import read_agent_state, read_conversation, read_memory_status
+from schemas.memory import AgentStateResponse, ConversationResponse, MemoryStatusResponse, SessionDeleteResponse
+from services.memory_service import delete_conversation, read_agent_state, read_conversation, read_memory_status
 
 
 memory_router = APIRouter(prefix="/memory")
@@ -27,6 +27,15 @@ async def conversation(session_id: str):
     """按会话 ID 读取历史对话记录。"""
     try:
         return await read_conversation(session_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@memory_router.delete("/sessions/{session_id}", response_model=SessionDeleteResponse)
+async def delete_session(session_id: str):
+    """删除指定会话的全部短期记忆。"""
+    try:
+        return await delete_conversation(session_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -11,6 +11,11 @@ load_dotenv()
 model_name = os.getenv("MODEL_NAME")
 api_key = os.getenv("API_KEY")
 base_url = os.getenv("BASE_URL")
+model_max_tokens = os.getenv("MODEL_MAX_TOKENS", "4096")
+
+model_name2 = os.getenv("MODEL_NAME2")
+api_key2 = os.getenv("API_KEY2")
+base_url2 = os.getenv("BASE_URL2")
 
 embeddings_model_name = os.getenv("EMBEDDINGS_MODEL_NAME")
 
@@ -18,8 +23,6 @@ secret_key = os.getenv("SECRET_KEY")
 algorithm = os.getenv("ALGORITHM")
 
 ps_dsn = os.getenv("PS_DSN")
-connection_string = os.getenv("CONNECTION_STRING")
-connectioned_string = os.getenv("CONNECTIONED_STRING")
 
 app_env = os.getenv("APP_ENV")
 redis_url = os.getenv("REDIS_URL")

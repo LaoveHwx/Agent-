@@ -13,6 +13,7 @@
     calculate_growth_rate   增长率/环比计算
     format_number           数值格式化（千分位/百分比/固定小数位）
 """
+import os
 from statistics import mean, median, stdev
 from typing import Annotated
 
@@ -95,7 +96,7 @@ def format_number(
 if __name__ == "__main__":
     mcp.run(
         transport="streamable-http",
-        host="localhost",  # 本地测试，打包再用 0.0.0.0
+        host=os.getenv("MCP_HOST", "localhost"),
         port=8848,
         path="/streamable",
         log_level="debug",

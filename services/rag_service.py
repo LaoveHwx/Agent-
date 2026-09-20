@@ -76,6 +76,7 @@ def ingest_uploaded_rag_files(files: list[dict]) -> RagUploadResponse:
             continue
 
         try:
+            # ①加载
             text = parse_upload(filename, data).strip()
         except ValueError as exc:
             results.append({"filename": filename, "skipped": True, "error": str(exc)})
@@ -87,7 +88,7 @@ def ingest_uploaded_rag_files(files: list[dict]) -> RagUploadResponse:
         if not text:
             results.append({"filename": filename, "skipped": True, "error": "no text content"})
             continue
-
+        # ②分割
         documents = []
         for index, chunk in enumerate(split_text(text)):
             documents.append(
