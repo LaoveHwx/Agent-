@@ -7,8 +7,9 @@ read_agent_state 取任务状态快照。
 from langchain_core.messages import AIMessage, HumanMessage
 
 from graph.center_graph import build_agent_graph
-from memory.redis_memory import get_agent_state, memory_status
-from schemas.memory import AgentStateResponse, ConversationResponse, MemoryStatusResponse
+from memory.redis_checkpointer import get_redis_saver
+from memory.redis_memory import delete_session_context, get_agent_state, memory_status
+from schemas.memory import AgentStateResponse, ConversationResponse, MemoryStatusResponse, SessionDeleteResponse
 
 
 def read_memory_status() -> MemoryStatusResponse:
@@ -34,6 +35,14 @@ async def read_conversation(session_id: str) -> ConversationResponse:
             messages.append({"role": role, "content": getattr(message, "content", "")})
 
     return ConversationResponse(session_id=session_id, messages=messages)
+
+
+async def delete_conversation(session_id: str) -> SessionDeleteResponse:
+    """删除会话的 LangGraph 检查点及该会话保存的短期 SQL 上下文。"""
+    saver = await get_redis_saver()
+    await saver.adelete_thread(session_id)
+    delete_session_context(session_id)
+    return SessionDeleteResponse(session_id=session_id, deleted=True)
 
 
 def read_agent_state(task_id: str) -> AgentStateResponse:

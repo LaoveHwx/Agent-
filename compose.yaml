@@ -1,0 +1,54 @@
+services:
+  frontend:
+    build: ./Agent_front
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  backend:
+    build: .
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PS_DSN: ${APP_DATABASE_URL:?请在 .env 中设置 APP_DATABASE_URL}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_PASSWORD: ""
+      STATION_MCP_URL: http://station-mcp:8848/streamable
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  station-mcp:
+    build:
+      context: .
+      dockerfile: mcp_station/Dockerfile
+    environment:
+      MCP_HOST: 0.0.0.0
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.0-alpine
+    ports:
+      - "192.168.233.129:6380:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  redis_data:

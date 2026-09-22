@@ -1,55 +1,27 @@
-"""
-RAG Agent：企业知识库检索节点。
-
-先确定性检索（search_documents）保证有来源，再由 create_agent 决定是否补充检索；
-最终 rag_context 必须带可追溯来源。
-"""
-from functools import lru_cache
+"""RAG Agent：固定检索一次，再用一次模型调用生成可追溯答案。"""
+import json
 from typing import Any
 
-from langchain.agents import create_agent
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
-from utils.langchain_utils import last_ai_content, load_tool_json
 from models.llm import get_llm
 from rag.retriever import search_documents
-from tools.langchain_rag_tools import RAG_TOOLS
 
 
-RAG_SYSTEM_PROMPT = """你是企业知识库 RAG Agent。工作流程：
-1. 调用 retrieve_company_knowledge_tool 获取指标口径、业务规则、数据字典等知识片段；
-2. 最终回答必须包含可追溯来源；
-3. 信息不足时可多次检索。
-"""
-
-
-@lru_cache
-def get_rag_agent_chain():
-    """构建并缓存 RAG Agent 链，绑定知识库检索工具与系统提示。"""
-    agent = create_agent(
-        model=get_llm(),
-        tools=RAG_TOOLS,
-        system_prompt=RAG_SYSTEM_PROMPT,
-    )
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("human", "{question}")
-    ])
-    return prompt_template | agent
+RAG_SYSTEM_PROMPT = """你是企业知识库问答助手。只根据给定知识片段回答。
+先给结论，再给关键依据；标注知识片段中的来源。知识库未命中时明确说明，不要反复检索，不要把通用知识伪装成企业口径。回答控制在 600 字以内。"""
 
 
 async def run_rag_agent(question: str, config: RunnableConfig | None = None) -> dict[str, Any]:
-    """执行 RAG Agent 链，先确定性检索兜底再交由模型补充，返回带来源的上下文。"""
-    # RAG 检索是企业问答的确定性步骤，节点先执行，避免模型跳过工具导致无来源回答。
-    deterministic_context = search_documents(question, top_k=5)
-    result = await get_rag_agent_chain().ainvoke({"question": question}, config=config)
-    rag_context = load_tool_json(result, "retrieve_company_knowledge_tool")
-    # 安全判断
-    if not isinstance(rag_context, list):
-        rag_context = deterministic_context
-
-    return {
-        "rag_context": rag_context,
-        "analysis": last_ai_content(result),
-        "errors": [],
-    }
+    """确定性检索一次并生成一次答案，避免 Agent 自主反复换关键词。"""
+    rag_context = search_documents(question, top_k=5)
+    context_text = json.dumps(rag_context, ensure_ascii=False, default=str)[:12000]
+    response = await get_llm().bind(max_tokens=800).ainvoke(
+        [
+            SystemMessage(content=RAG_SYSTEM_PROMPT),
+            HumanMessage(content=f"用户问题：{question}\n\n知识片段：\n{context_text}"),
+        ],
+        config=config,
+    )
+    return {"rag_context": rag_context, "analysis": str(response.content), "errors": []}

@@ -10,7 +10,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from tools.postgres_tool import (
-    get_schema_summary,
+    get_table_list_summary,
     get_table_columns,
     query_business_database,
     validate_business_sql,
@@ -19,11 +19,11 @@ from tools.postgres_tool import (
 
 @tool
 def list_tables_tool() -> str:
-    """列出 SQL Agent 可用的业务表及其列定义。"""
-    schema_summary = get_schema_summary(include_internal=False)
-    if not schema_summary:
+    """列出业务表的表名与注释（不含列），用于先挑选与问题相关的表。"""
+    table_list = get_table_list_summary(include_internal=False)
+    if not table_list:
         return "No business tables are available. Ask the developer to seed or connect business data first."
-    return schema_summary
+    return table_list
 
 
 @tool

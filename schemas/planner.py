@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 # 任务类型三选一：约束 LLM 结构化输出与 PlannerResponse 契约
 TaskType = Literal["knowledge_query", "data_query", "complex_analysis"]
+MemoryRoute = Literal["short_term_redis", "long_term_vector", "hybrid", "none"]
 
 
 class PlannerRequest(BaseModel):
@@ -20,3 +21,6 @@ class PlannerResponse(BaseModel):
     question: str
     task_type: TaskType
     steps: list[str]
+    memory_route: MemoryRoute = "none"
+    memory_reason: str = ""
+    memory_confidence: float = 0.0

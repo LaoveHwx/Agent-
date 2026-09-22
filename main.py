@@ -5,29 +5,46 @@
     3.可能还有：初始化数据库...
     最后：前端CORS配置
 """
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
 
 from api_router.agent_router import agent_router
+from api_router.auth_router import auth_router
 from api_router.health_router import health_router
 from api_router.memory_router import memory_router
 from api_router.planner_router import planner_router
 from api_router.rag_router import rag_router
 from api_router.tool_router import tool_router
 from utils.env_util import cors_origins
+from utils.auth import require_auth
 from utils.logger import request_log_middleware, setup_logger
+from utils.postgres_pool import close_postgres_pool
 
 logger = setup_logger(__name__)
-app = FastAPI(title="Enterprise Data Agent API")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """应用关闭时释放 PostgreSQL 连接池。"""
+    try:
+        yield
+    finally:
+        close_postgres_pool()
+
+
+app = FastAPI(title="Enterprise Data Agent API", lifespan=lifespan)
 # 日志中间件
 app.middleware("http")(request_log_middleware)
 app.include_router(health_router)
-app.include_router(agent_router, prefix="/v1")
-app.include_router(planner_router, prefix="/v1")
-app.include_router(rag_router, prefix="/v1")
-app.include_router(tool_router, prefix="/v1")
-app.include_router(memory_router, prefix="/v1")
+app.include_router(auth_router, prefix="/v1")
+app.include_router(agent_router, prefix="/v1", dependencies=[Depends(require_auth)])
+app.include_router(planner_router, prefix="/v1", dependencies=[Depends(require_auth)])
+app.include_router(rag_router, prefix="/v1", dependencies=[Depends(require_auth)])
+app.include_router(tool_router, prefix="/v1", dependencies=[Depends(require_auth)])
+app.include_router(memory_router, prefix="/v1", dependencies=[Depends(require_auth)])
 # evaluation 评测套件（默认不挂载）：跑 sql/rag/agent 三类用例，
 # 验证 SQL 能查到数据、RAG 能检到正确来源、Agent 路由+回答是否跑通。
 # 需要时取消下面两行注释即可

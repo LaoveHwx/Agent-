@@ -1,71 +1,39 @@
-"""
-数据分析的汇总节点。
-结合 SQL 查询结果、RAG 知识上下文与跨轮对话历史，输出最终分析结论。
-"""
-from functools import lru_cache
-from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
+"""数据分析节点：基于上游真实结果调用一次模型生成最终答案。"""
+import json
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
-from utils.langchain_utils import last_ai_content
 from models.llm import get_llm
-from tools.langchain_memory_tools import MEMORY_TOOLS
 
 
-ANALYST_SYSTEM_PROMPT = """你是企业数据分析系统中的 Analyst Agent。工作流程：
-1. 结合 SQL 查询结果和 RAG 业务知识，输出清晰、可解释、可追溯的分析结论；
-2. 信息不足时明确说明缺口，不要编造数据；
-3. 回答企业问题前，可调用 get_company_memory_tool 获取公司级长期记忆；
-4. 涉及用户偏好、常用指标、常看区域时，可调用 get_user_memory_tool；
-5. 用户明确提供新的个人偏好或公司规则时，调用对应 save 工具保存。
-"""
-
-MAX_HISTORY_MESSAGES = 20
-
-
-@lru_cache
-def get_analyst_agent():
-    """构建并缓存 Analyst Agent，绑定记忆工具与汇总分析系统提示。"""
-    return create_agent(
-        model=get_llm(),
-        tools=MEMORY_TOOLS,
-        system_prompt=ANALYST_SYSTEM_PROMPT,
-    )
+ANALYST_SYSTEM_PROMPT = """你是企业数据分析助手。根据给定 SQL 结果和知识上下文直接回答用户。
+要求：先给结论，再给简洁表格或关键数据和依据来源；禁止编造；数据不足时说明缺口；不要输出内部调度过程；不要自行画 Mermaid 图。回答控制在 800 字以内。"""
 
 
 async def run_analyst_agent(state: dict, config: RunnableConfig | None = None) -> dict:
-    """汇总节点：具有跨轮对话历史功能==输出最终分析结论。
-    对话历史来自 state["messages"]
-    """
-    question = state.get("question", "")
-    sql_result = state.get("sql_result")
-    rag_context = state.get("rag_context", [])
-    errors = state.get("errors", [])
-
-    context = f"""
-用户问题：
-{question}
-
-SQL Agent 结果：
-{sql_result}
-
-RAG Agent 结果：
-{rag_context}
-
-已有错误：
-{errors}
-
-请输出最终分析结论。
-"""
-    context_message = HumanMessage(content=context)
-
-    messages = list(state.get("messages", []))
-    # messages 末尾是当轮的 HumanMessage(question)，替换为带结构化上下文的版本；
-    # 取最近 MAX_HISTORY_MESSAGES 条防止 prompt 膨胀。
-    if messages:
-        messages = messages[:-1]
-    messages.append(context_message)
-    messages = messages[-MAX_HISTORY_MESSAGES:]
-
-    result = await get_analyst_agent().ainvoke({"messages": messages}, config=config)
-    return {"analysis": last_ai_content(result)}
+    """只调用一次模型，避免工具 Agent 与最终节点重复生成。"""
+    recent_messages = []
+    if state.get("memory_route") in {"short_term_redis", "hybrid"}:
+        for message in list(state.get("messages", []))[-6:]:
+            recent_messages.append({
+                "role": message.__class__.__name__,
+                "content": str(getattr(message, "content", ""))[:1500],
+            })
+    payload = {
+        "question": state.get("question", ""),
+        "sql": state.get("sql"),
+        "sql_result": state.get("sql_result"),
+        "rag_context": state.get("rag_context", [])[:5],
+        "memory_route": state.get("memory_route", "none"),
+        "recent_messages": recent_messages,
+        "errors": state.get("errors", []),
+    }
+    response = await get_llm().bind(max_tokens=1000).ainvoke(
+        [
+            SystemMessage(content=ANALYST_SYSTEM_PROMPT),
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str)[:16000]),
+        ],
+        config=config,
+    )
+    return {"analysis": str(response.content)}

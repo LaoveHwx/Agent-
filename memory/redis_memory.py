@@ -104,3 +104,10 @@ def get_session_context(session_id: str, context_name: str) -> dict[str, Any] | 
     client = _redis_client()
     key = f"{KEY_PREFIX}:session_context:{session_id}:{context_name}"
     return _json_loads(client.get(key))
+
+
+def delete_session_context(session_id: str) -> int:
+    """删除指定会话保存的可复用短期上下文，返回删除的键数量。"""
+    client = _redis_client()
+    keys = list(client.scan_iter(match=f"{KEY_PREFIX}:session_context:{session_id}:*"))
+    return int(client.delete(*keys)) if keys else 0

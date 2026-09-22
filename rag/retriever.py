@@ -6,29 +6,14 @@ search_documents 优先向量余弦检索，异常降级 ILIKE 关键词检索�
 """
 from typing import Any
 
-import psycopg
-from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from rag.embedding import embed_text, get_embedding_dim, to_pgvector
-from utils.env_util import connection_string, connectioned_string, ps_dsn
 from utils.logger import setup_logger
+from utils.postgres_pool import get_connection
 
 
 logger = setup_logger(__name__)
-
-
-def _dsn() -> str:
-    """连接数据库保护"""
-    dsn = ps_dsn or connection_string or connectioned_string
-    if not dsn:
-        raise RuntimeError("PostgreSQL DSN is not configured. Please set PS_DSN in .env")
-    return dsn
-
-
-def get_connection():
-    """查询数据表并且以dict_row字典输出"""
-    return psycopg.connect(_dsn(), row_factory=dict_row)
 
 
 def init_rag_schema() -> dict[str, Any]:

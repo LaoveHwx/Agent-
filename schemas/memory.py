@@ -20,6 +20,11 @@ class ConversationResponse(BaseModel):
     messages: list[dict[str, Any]]
 
 
+class SessionDeleteResponse(BaseModel):
+    session_id: str
+    deleted: bool
+
+
 class AgentStateResponse(BaseModel):
     task_id: str
     state: dict[str, Any] | None
