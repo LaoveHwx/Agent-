@@ -138,7 +138,11 @@ async def sql_node(state: AgentState, config: RunnableConfig) -> AgentState:
     """
     生成并执行sql语句并返回查询结果
     """
-    result = await run_sql_agent(state["question"], config=config)
+    question = state["question"]
+    if state.get("memory_route") in {"short_term_redis", "hybrid"}:
+        recent = _format_recent_messages(list(state.get("messages", [])), limit=6)
+        question = f"{question}\n\n最近会话上下文：\n{recent}"
+    result = await run_sql_agent(question, config=config)
     return {
         **state,
         "sql": result.get("sql"),
@@ -200,14 +204,8 @@ def _format_recent_messages(messages: list, limit: int = 8) -> str:
 
 
 async def mcp_node(state: AgentState, config: RunnableConfig) -> AgentState:
-    """数据可视化节点：用「绑定图表 MCP 工具的大模型」对数据做可视化。
-
-    是否进入 MCP 由 route_after_analysis 决定；
-    bind_tools 只让大模型自主选择合适的图表工具和参数。
-    MCP 服务未启动/无工具时降级透传，不阻断主流程。
-    """
+    """根据明确意图直接调用 MCP，再用一次短模型调用整理成品答案。"""
     question = state.get("question", "")
-    previous_question = state.get("previous_question") or ""
     analysis = state.get("analysis") or ""
     sql_result = state.get("sql_result")
     errors = state.get("errors", [])
@@ -220,78 +218,92 @@ async def mcp_node(state: AgentState, config: RunnableConfig) -> AgentState:
         return {**state, "analysis": analysis}
 
     tool_by_name = {t.name: t for t in tools}
-    llm = get_llm().bind_tools(tools)
+    rows = _sql_rows(state)[:50]
+    columns = sql_result.get("columns", []) if isinstance(sql_result, dict) else []
+    normalized_rows = [row if isinstance(row, dict) else dict(zip(columns, row)) for row in rows]
 
-    messages: list = [
-        SystemMessage(content=MCP_SYSTEM_PROMPT),
-        HumanMessage(content=(
-            f"用户问题：{question}\n\n"
-            f"上一轮数据问题：{previous_question}\n\n"
-            f"SQL 查询结果：{sql_result}\n\n"
-            f"已有分析：{analysis}\n\n"
-            "请基于以上真实 SQL 结果选择并调用一个合适的图表 MCP 工具，不得编造数据；"
-            "如果 SQL 结果确实不足以支撑图表，请说明原因并直接整理已有分析作答。"
-        )),
+    def number(value):
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    numeric_columns = [
+        column for column in columns
+        if any(number(row.get(column)) is not None for row in normalized_rows)
     ]
+    category_columns = [column for column in columns if column not in numeric_columns]
+    category = category_columns[0] if category_columns else (columns[0] if columns else None)
+    numeric = numeric_columns[0] if numeric_columns else None
+    observation: Any = ""
 
-    # 工具调用循环：模型出 tool_calls -> 执行 -> 回填 ToolMessage -> 再问，直到无 tool_calls
-    for _ in range(MAX_MCP_STEPS):
-        ai_msg: AIMessage = await llm.ainvoke(messages, config=config)
-        messages.append(ai_msg)
-        if not getattr(ai_msg, "tool_calls", None):
-            break
-        for tc in ai_msg.tool_calls:
-            tool = tool_by_name.get(tc.get("name"))
-            if tool is None:
-                continue
-            try:
-                observation = await tool.ainvoke(tc.get("args", {}), config=config)
-            except Exception as exc:
-                observation = f"工具调用失败: {exc}"
-            messages.append(ToolMessage(
-                content=str(observation),
-                tool_call_id=tc.get("id", ""),
-                name=tc.get("name", ""),
-            ))
+    try:
+        if any(word in question for word in NUMERIC_ANALYSIS_KEYWORDS) and numeric:
+            values = [number(row.get(numeric)) for row in normalized_rows]
+            values = [value for value in values if value is not None]
+            if any(word in question for word in ("环比", "同比", "增长率", "增速", "变化率")) and len(values) >= 2:
+                tool = tool_by_name["station_mcp_calculate_growth_rate"]
+                observation = await tool.ainvoke({"current": values[-1], "previous": values[-2]}, config=config)
+            elif any(word in question for word in ("千分位", "格式化")) and values:
+                tool = tool_by_name["station_mcp_format_number"]
+                observation = await tool.ainvoke({"value": values[-1]}, config=config)
+            else:
+                tool = tool_by_name["station_mcp_compute_statistics"]
+                observation = await tool.ainvoke({"numbers": values}, config=config)
+        elif normalized_rows and category and numeric:
+            title = question[:60]
+            common_data = [
+                {"category": str(row.get(category, "")), "value": number(row.get(numeric)) or 0}
+                for row in normalized_rows
+            ]
+            if any(word in question for word in ("饼图", "占比", "比例", "份额")):
+                tool = tool_by_name["chart_mcp_generate_pie_chart"]
+                observation = await tool.ainvoke({"data": common_data, "title": title}, config=config)
+            elif any(word in question for word in ("折线", "趋势", "走势", "变化")):
+                if len(numeric_columns) >= 2 and "chart_mcp_generate_dual_axes_chart" in tool_by_name:
+                    tool = tool_by_name["chart_mcp_generate_dual_axes_chart"]
+                    series = [
+                        {"type": "column" if index == 0 else "line", "data": [number(row.get(col)) or 0 for row in normalized_rows], "axisYTitle": col}
+                        for index, col in enumerate(numeric_columns[:2])
+                    ]
+                    observation = await tool.ainvoke({"categories": [str(row.get(category, "")) for row in normalized_rows], "series": series, "title": title}, config=config)
+                else:
+                    tool = tool_by_name["chart_mcp_generate_line_chart"]
+                    data = [{"time": str(row.get(category, "")), "value": number(row.get(numeric)) or 0} for row in normalized_rows]
+                    observation = await tool.ainvoke({"data": data, "title": title}, config=config)
+            elif "条形图" in question:
+                tool = tool_by_name["chart_mcp_generate_bar_chart"]
+                observation = await tool.ainvoke({"data": common_data, "title": title, "stack": False}, config=config)
+            else:
+                tool = tool_by_name["chart_mcp_generate_column_chart"]
+                observation = await tool.ainvoke({"data": common_data, "title": title, "group": False}, config=config)
+    except Exception as exc:
+        errors = errors + [f"MCP工具调用失败: {exc}"]
 
-    final_analysis = last_ai_content({"messages": messages}) or analysis
-    return {**state, "analysis": final_analysis}
+    tool_text = ""
+    if isinstance(observation, list):
+        tool_text = "\n".join(str(item.get("text", "")) for item in observation if isinstance(item, dict))
+    elif observation:
+        tool_text = str(observation)
+
+    response = await get_llm().bind(max_tokens=1800).ainvoke(
+        [
+            SystemMessage(content="根据真实 SQL 结果和工具结果直接回答用户。保留工具返回的图片 URL，并写成 Markdown 图片；给出简洁数据表和2至4条结论；禁止编造；800字以内。"),
+            HumanMessage(content=f"用户问题：{question}\nSQL结果：{sql_result}\n工具结果：{tool_text}\n已有错误：{errors}"),
+        ],
+        config=config,
+    )
+    return {**state, "analysis": str(response.content), "errors": errors}
 
 
 FINAL_SYSTEM_PROMPT = load_prompt("final")
 
 
 async def final_node(state: AgentState, config: RunnableConfig) -> AgentState:
-    """最终回答节点：统一生成 final_answer，并把答案累积进对话历史。"""
+    """直接透传上游成品答案，避免重复调用模型改写。"""
     errors = state.get("errors", [])
     analysis = state.get("analysis") or state.get("final_answer") or ""
-    final_answer = ""
-
-    if analysis:
-        recent_messages = _format_recent_messages(list(state.get("messages", [])))
-        messages = [
-            SystemMessage(content=FINAL_SYSTEM_PROMPT),
-            HumanMessage(content=(
-                f"用户问题：{state.get('question', '')}\n\n"
-                f"短期 Redis 会话上下文：\n{recent_messages}\n\n"
-                f"上一轮数据问题：{state.get('previous_question', '')}\n\n"
-                f"任务类型：{state.get('task_type')}\n\n"
-                f"记忆调度判断：{state.get('memory_route', 'none')}\n"
-                f"判断理由：{state.get('memory_reason', '')}\n"
-                f"置信度：{state.get('memory_confidence', 0.0)}\n\n"
-                f"执行计划：{state.get('plan', [])}\n\n"
-                f"SQL：{state.get('sql')}\n\n"
-                f"SQL 查询结果：{state.get('sql_result')}\n\n"
-                f"RAG 上下文：{state.get('rag_context', [])}\n\n"
-                f"上游分析/工具结果：{analysis}\n\n"
-                f"错误信息：{errors}\n\n"
-                "请生成最终回答。"
-            )),
-        ]
-        chunks: list[str] = []
-        async for chunk in get_llm().astream(messages, config=config):
-            chunks.append(_message_content_text(chunk.content))
-        final_answer = "".join(chunks).strip() or analysis
+    final_answer = analysis.strip()
 
     if not final_answer:
         if state.get("rag_context"):
@@ -337,6 +349,8 @@ def route_after_sql(state: AgentState) -> str:
     """sql 之后的条件路由：复杂分析再走 rag，其余直接进 analyst。"""
     if state.get("task_type") == "complex_analysis":
         return "rag"
+    if _has_explicit_mcp_intent(state.get("question", "")):
+        return "mcp"
     return "analyst"
 
 
@@ -344,6 +358,8 @@ def route_after_rag(state: AgentState) -> str:
     """rag 之后的条件路由：知识问答直接收口，其余进 analyst。"""
     if state.get("task_type") == "knowledge_query":
         return "final"
+    if _has_explicit_mcp_intent(state.get("question", "")) and state.get("sql_result"):
+        return "mcp"
     return "analyst"
 
 MCP_INTENT_KEYWORDS = (
@@ -359,6 +375,11 @@ NUMERIC_ANALYSIS_KEYWORDS = (
     "中位数", "众数", "标准差", "方差", "分位数", "四分位",
     "描述统计", "统计描述", "千分位", "格式化数值",
 )
+
+
+def _has_explicit_mcp_intent(question: str) -> bool:
+    text = question.lower()
+    return any(keyword.lower() in text for keyword in MCP_INTENT_KEYWORDS + NUMERIC_ANALYSIS_KEYWORDS)
 
 
 def _sql_rows(state: AgentState) -> list:
@@ -443,6 +464,7 @@ async def build_agent_graph():
             {
                 "rag": "rag",
                 "analyst": "analyst",
+                "mcp": "mcp",
             },
         )
         graph.add_conditional_edges(
@@ -451,6 +473,7 @@ async def build_agent_graph():
             {
                 "analyst": "analyst",
                 "final": "final",
+                "mcp": "mcp",
             },
         )
         graph.add_conditional_edges(

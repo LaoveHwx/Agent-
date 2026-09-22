@@ -178,9 +178,12 @@ async def stream_analyze_question(request: AgentAnalyzeRequest) -> AsyncIterator
     ) + "\n"
 
     if not streamed_answer and final_state.get("final_answer"):
-        yield json.dumps(
-            {"event": "chunk", "node": "final", "content": final_state["final_answer"]},
-            ensure_ascii=False,
-        ) + "\n"
+        content = final_state["final_answer"]
+        for start in range(0, len(content), 80):
+            yield json.dumps(
+                {"event": "chunk", "node": "final", "content": content[start:start + 80]},
+                ensure_ascii=False,
+            ) + "\n"
+            await asyncio.sleep(0)
 
     yield json.dumps({"event": "done"}, ensure_ascii=False) + "\n"
